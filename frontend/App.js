@@ -109,6 +109,7 @@ function AuthScreen() {
   const [name, setName] = useState('');
   const [roomNo, setRoomNo] = useState('');
   const [upiId, setUpiId] = useState('');
+  const [showSignupModal, setShowSignupModal] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -165,7 +166,6 @@ function AuthScreen() {
         <Text style={styles.authTitle}>HostelLedger</Text>
         <Text style={styles.authSubtitle}>Login with your admin or hostler credentials to manage mess, expenses, splits, and hostel ledgers.</Text>
 
-        <LabeledInput label="Full name" value={name} onChangeText={setName} placeholder="Your full name (for signup)" />
         <LabeledInput label="Email" value={email} onChangeText={setEmail} placeholder="you@hostel.local" keyboardType="email-address" autoCapitalize="none" />
         <Text style={styles.label}>Password</Text>
         <View style={styles.passwordBox}>
@@ -182,17 +182,37 @@ function AuthScreen() {
           </TouchableOpacity>
         </View>
 
-        <LabeledInput label="Room (optional)" value={roomNo} onChangeText={setRoomNo} placeholder="B-204" />
-        <LabeledInput label="UPI ID (optional)" value={upiId} onChangeText={setUpiId} placeholder="name@upi" />
-
         <View style={styles.authActionsRow}>
           <TouchableOpacity style={[styles.primaryButton, styles.authActionButton]} onPress={loginSubmit} disabled={loading}>
             {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Login</Text>}
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.primaryButton, styles.authActionButton]} onPress={signupSubmit} disabled={loading}>
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Signup</Text>}
+          <TouchableOpacity style={[styles.primaryButton, styles.authActionButton]} onPress={() => setShowSignupModal(true)} disabled={loading}>
+            <Text style={styles.buttonText}>Signup</Text>
           </TouchableOpacity>
         </View>
+
+        <Modal visible={showSignupModal} animationType="slide" transparent={true} onRequestClose={() => setShowSignupModal(false)}>
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalSheet, { margin: 20 }] }>
+              <Text style={styles.modalTitle}>Create account</Text>
+              <LabeledInput label="Full name" value={name} onChangeText={setName} placeholder="Your full name" />
+              <LabeledInput label="Email" value={email} onChangeText={setEmail} placeholder="you@hostel.local" keyboardType="email-address" autoCapitalize="none" />
+              <LabeledInput label="Password" value={password} onChangeText={setPassword} placeholder="Password" secureTextEntry />
+              <View style={styles.twoColumn}>
+                <LabeledInput label="Room (optional)" value={roomNo} onChangeText={setRoomNo} placeholder="B-204" compact />
+                <LabeledInput label="UPI ID (optional)" value={upiId} onChangeText={setUpiId} placeholder="name@upi" compact />
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 12 }}>
+                <TouchableOpacity style={[styles.primaryButton, { paddingVertical: 10 }]} onPress={signupSubmit} disabled={loading}>
+                  {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Create account</Text>}
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.smallAction, { marginLeft: 8 }]} onPress={() => setShowSignupModal(false)}>
+                  <Text style={styles.smallActionText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </View>
     </KeyboardAvoidingView>
   );
