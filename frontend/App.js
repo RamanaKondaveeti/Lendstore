@@ -48,6 +48,7 @@ const idOf = (item) => String(item?._id || item?.id || item?.userId || '');
 export default function App() {
   const [token, setToken] = useState(null);
   const [user, setUser] = useState(null);
+  const [demoRole, setDemoRole] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -78,6 +79,7 @@ export default function App() {
   const logout = async () => {
     setToken(null);
     setUser(null);
+    setDemoRole(null);
     await AsyncStorage.multiRemove(['token', 'user']);
   };
 
@@ -88,7 +90,7 @@ export default function App() {
   return (
     <AuthContext.Provider value={{ token, user, login, logout }}>
       <SafeAreaProvider>
-        {token ? <MainScreen /> : <AuthScreen />}
+        {token || demoRole ? <MainScreen demoMode={!!demoRole} demoRole={demoRole} /> : <RoleSelectionScreen onSelectRole={setDemoRole} />}
       </SafeAreaProvider>
     </AuthContext.Provider>
   );
@@ -102,60 +104,7 @@ function CenteredLoader() {
   );
 }
 
-function AuthScreen() {
-  const { login } = useContext(AuthContext);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
-  const [roomNo, setRoomNo] = useState('');
-  const [upiId, setUpiId] = useState('');
-  const [showSignupModal, setShowSignupModal] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-
-  const loginSubmit = async () => {
-    if (!email || !password) {
-      return Alert.alert('Missing details', 'Email and password are required.');
-    }
-    setLoading(true);
-    try {
-      const res = await fetch(`${API_URL}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Login failed');
-      await login(data.token, data.user);
-    } catch (error) {
-      Alert.alert('Login failed', error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const signupSubmit = async () => {
-    if (!name || !email || !password) {
-      return Alert.alert('Missing details', 'Name, email and password are required for signup.');
-    }
-    setLoading(true);
-    try {
-      const res = await fetch(`${API_URL}/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password, roomNo, upiId, messPlan: 'standard' })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Signup failed');
-      // auto-login after successful signup
-      await login(data.token, data.user);
-    } catch (error) {
-      Alert.alert('Signup failed', error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+function RoleSelectionScreen({ onSelectRole }) {
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.authContainer}>
       <StatusBar barStyle="light-content" backgroundColor={THEME.secondary} />
@@ -164,68 +113,30 @@ function AuthScreen() {
           <MaterialCommunityIcons name="silverware-fork-knife" size={34} color={THEME.accent} />
         </View>
         <Text style={styles.authTitle}>HostelLedger</Text>
-        <Text style={styles.authSubtitle}>Login with your admin or hostler credentials to manage mess, expenses, splits, and hostel ledgers.</Text>
+        <Text style={styles.authSubtitle}>Pick a role to continue to the dashboard.</Text>
 
-        <LabeledInput label="Email" value={email} onChangeText={setEmail} placeholder="you@hostel.local" keyboardType="email-address" autoCapitalize="none" />
-        <Text style={styles.label}>Password</Text>
-        <View style={styles.passwordBox}>
-          <TextInput
-            style={styles.passwordInput}
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry={!showPassword}
-            placeholder="Password"
-            placeholderTextColor={THEME.muted}
-          />
-          <TouchableOpacity onPress={() => setShowPassword((value) => !value)} style={styles.iconButton}>
-            <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={THEME.muted} />
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.authActionsRow}>
-          <TouchableOpacity style={[styles.primaryButton, styles.authActionButton]} onPress={loginSubmit} disabled={loading}>
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Login</Text>}
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.primaryButton, styles.authActionButton]} onPress={() => setShowSignupModal(true)} disabled={loading}>
-            <Text style={styles.buttonText}>Signup</Text>
-          </TouchableOpacity>
-        </View>
-
-        <Modal visible={showSignupModal} animationType="slide" transparent={true} onRequestClose={() => setShowSignupModal(false)}>
-          <View style={styles.modalOverlay}>
-            <View style={[styles.modalSheet, { margin: 20 }] }>
-              <Text style={styles.modalTitle}>Create account</Text>
-              <LabeledInput label="Full name" value={name} onChangeText={setName} placeholder="Your full name" />
-              <LabeledInput label="Email" value={email} onChangeText={setEmail} placeholder="you@hostel.local" keyboardType="email-address" autoCapitalize="none" />
-              <LabeledInput label="Password" value={password} onChangeText={setPassword} placeholder="Password" secureTextEntry />
-              <View style={styles.twoColumn}>
-                <LabeledInput label="Room (optional)" value={roomNo} onChangeText={setRoomNo} placeholder="B-204" compact />
-                <LabeledInput label="UPI ID (optional)" value={upiId} onChangeText={setUpiId} placeholder="name@upi" compact />
-              </View>
-              <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 12 }}>
-                <TouchableOpacity style={[styles.primaryButton, { paddingVertical: 10 }]} onPress={signupSubmit} disabled={loading}>
-                  {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Create account</Text>}
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.smallAction, { marginLeft: 8 }]} onPress={() => setShowSignupModal(false)}>
-                  <Text style={styles.smallActionText}>Cancel</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
+        <TouchableOpacity style={styles.roleButton} onPress={() => onSelectRole('user')}>
+          <Text style={styles.buttonTextLarge}>User</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.roleButton, styles.roleButtonSecondary]} onPress={() => onSelectRole('admin')}>
+          <Text style={styles.buttonTextLarge}>Admin</Text>
+        </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
   );
 }
 
-function MainScreen() {
+function MainScreen({ demoMode = false, demoRole = null }) {
   const { token, user, logout } = useContext(AuthContext);
-  const [activeTab, setActiveTab] = useState(user?.role === 'admin' ? 'admin' : 'home');
-  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState(demoMode ? (demoRole === 'admin' ? 'admin' : 'home') : user?.role === 'admin' ? 'admin' : 'home');
+  const [loading, setLoading] = useState(demoMode ? false : true);
   const [error, setError] = useState(null);
   const [data, setData] = useState(emptyData);
 
   const apiFetch = useCallback(async (path, options = {}) => {
+    if (demoMode) {
+      return {};
+    }
     const res = await fetch(`${API_URL}${path}`, {
       ...options,
       headers: {
@@ -237,9 +148,15 @@ function MainScreen() {
     const json = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(json.message || `Server returned ${res.status}`);
     return json;
-  }, [token]);
+  }, [token, demoMode]);
 
   const refresh = useCallback(async () => {
+    if (demoMode) {
+      setLoading(false);
+      setError(null);
+      setData(emptyData);
+      return;
+    }
     setLoading(true);
     try {
       const appData = await apiFetch('/app-data');
@@ -250,16 +167,23 @@ function MainScreen() {
     } finally {
       setLoading(false);
     }
-  }, [apiFetch]);
+  }, [apiFetch, demoMode]);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    if (!demoMode) {
+      refresh();
+    } else {
+      setLoading(false);
+    }
+  }, [refresh, demoMode]);
 
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = demoMode ? demoRole === 'admin' : user?.role === 'admin';
   const tabs = isAdmin ? adminTabs : userTabs;
 
-  const screenProps = { data, refresh, loading, apiFetch, user };
+  const demoUser = demoMode
+    ? { role: demoRole, name: demoRole === 'admin' ? 'Admin' : 'User', roomNo: demoRole === 'user' ? 'B-204' : '' }
+    : null;
+  const screenProps = { data, refresh, loading, apiFetch, user: demoMode ? demoUser : user };
   const renderContent = () => {
     if (error && data.residents.length === 0 && data.expenses.length === 0) {
       return (
@@ -1230,6 +1154,8 @@ const styles = StyleSheet.create({
   iconButton: { padding: 10 },
   primaryButton: { backgroundColor: THEME.primary, borderRadius: 8, paddingVertical: 13, alignItems: 'center', justifyContent: 'center', marginTop: 14 },
   primaryButtonLarge: { backgroundColor: THEME.primary, borderRadius: 8, paddingVertical: 16, alignItems: 'center', justifyContent: 'center', marginTop: 20 },
+  roleButton: { backgroundColor: THEME.primary, borderRadius: 8, paddingVertical: 16, alignItems: 'center', justifyContent: 'center', marginTop: 12 },
+  roleButtonSecondary: { backgroundColor: THEME.accent },
   buttonText: { color: '#fff', fontWeight: '900', fontSize: 14 },
   buttonTextLarge: { color: '#fff', fontWeight: '900', fontSize: 16 },
   segment: { flexDirection: 'row', backgroundColor: THEME.soft, borderRadius: 8, padding: 4, marginBottom: 12 },

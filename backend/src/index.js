@@ -11,6 +11,8 @@ const { pool, query } = require('./db');
 const app = express();
 const port = Number(process.env.PORT || 5000);
 const jwtSecret = process.env.JWT_SECRET || 'dev-secret';
+const defaultAdminEmail = process.env.ADMIN_EMAIL || 'admin@hostel.local';
+const defaultAdminPassword = process.env.ADMIN_PASSWORD || 'Admin@123';
 
 const corsOrigins = process.env.CORS_ORIGIN?.split(',').map((origin) => origin.trim()) || ['*'];
 
@@ -578,12 +580,47 @@ app.post('/api/reminders/upi', requireAuth, async (req, res) => {
   });
 });
 
+async function ensureAdminUser() {
+  const rows = await query('SELECT id, name, email, role FROM auth_users WHERE email = :email', { email: defaultAdminEmail });
+  if (rows.length) {
+    const user = rows[0];
+    if (user.role !== 'admin') {
+      await query("UPDATE auth_users SET role = 'admin' WHERE id = :id", { id: user.id });
+    }
+    await query('INSERT IGNORE INTO expense_users (id, name, email) VALUES (:id, :name, :email)', {
+      id: user.id,
+      name: user.name,
+      email: user.email
+    });
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash(defaultAdminPassword, 12);
+  const result = await query(
+    `INSERT INTO auth_users (name, email, password_hash, role, room_no, upi_id, mess_plan)
+     VALUES (:name, :email, :passwordHash, 'admin', :roomNo, :upiId, 'standard')`,
+    {
+      name: 'Admin',
+      email: defaultAdminEmail,
+      passwordHash,
+      roomNo: 'A-1',
+      upiId: defaultAdminEmail
+    }
+  );
+  await query('INSERT INTO expense_users (id, name, email) VALUES (:id, :name, :email)', {
+    id: result.insertId,
+    name: 'Admin',
+    email: defaultAdminEmail
+  });
+}
+
 app.use((err, _req, res, _next) => {
   console.error(err);
   res.status(500).json({ message: 'Server error', detail: process.env.NODE_ENV === 'production' ? undefined : err.message });
 });
 
 ensureSchema()
+  .then(() => ensureAdminUser())
   .then(() => {
     app.listen(port, '0.0.0.0', () => {
       console.log(`HostelLedger API listening on ${port}`);
