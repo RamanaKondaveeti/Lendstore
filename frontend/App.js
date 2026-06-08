@@ -1,20 +1,19 @@
-import React, { useEffect, useState, useCallback, createContext, useContext } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
-  View,
-  FlatList,
-  ActivityIndicator,
-  StatusBar,
-  TouchableOpacity,
   TextInput,
-  ScrollView,
-  RefreshControl,
-  Alert,
-  Modal,
-  Dimensions,
-  KeyboardAvoidingView,
-  Platform
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -22,27 +21,33 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://3.108.233.74/api';
 
-const { width } = Dimensions.get('window');
-
 const THEME = {
-  primary: '#2457c5',
-  secondary: '#1f3f83',
-  accent: '#0f9f9a',
-  background: '#f4f6f8',
+  primary: '#204e4a',
+  secondary: '#102927',
+  accent: '#b88a2e',
+  ink: '#17201f',
+  muted: '#66736f',
+  background: '#f5f2ea',
   surface: '#ffffff',
-  text: '#17202a',
-  textSecondary: '#667085',
-  success: '#168255',
-  error: '#c2413a',
-  warning: '#b7791f',
-  border: '#d9dee7',
-  shadow: 'rgba(18, 25, 38, 0.08)'
+  soft: '#ebe4d5',
+  success: '#167449',
+  error: '#bb3e35',
+  warning: '#a96e14',
+  border: '#ded6c7',
+  shadow: 'rgba(20, 27, 25, 0.12)'
 };
 
-const currency = (amount) => `Rs. ${parseFloat(amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const ADMIN_EMAIL = 'admin@hostel.local';
+const USER_EMAIL = 'rahul@hostel.local';
+const DEMO_PASSWORD = 'Hostel@123';
 
-// --- Auth Context ---
-const AuthContext = createContext();
+const AuthContext = createContext(null);
+
+const currency = (amount) => `Rs. ${Number(amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const shortDate = (date) => date ? new Date(date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }) : 'Today';
+const todayISO = () => new Date().toISOString().slice(0, 10);
+const monthISO = () => new Date().toISOString().slice(0, 7);
+const idOf = (item) => String(item?._id || item?.id || item?.userId || '');
 
 export default function App() {
   const [token, setToken] = useState(null);
@@ -58,8 +63,8 @@ export default function App() {
           setToken(savedToken);
           setUser(JSON.parse(savedUser));
         }
-      } catch (e) {
-        console.error('Failed to load auth', e);
+      } catch (error) {
+        console.error('Unable to restore session', error);
       } finally {
         setLoading(false);
       }
@@ -67,584 +72,1095 @@ export default function App() {
     loadAuth();
   }, []);
 
-  const login = async (newToken, newUser) => {
-    setToken(newToken);
-    setUser(newUser);
-    await AsyncStorage.setItem('token', newToken);
-    await AsyncStorage.setItem('user', JSON.stringify(newUser));
+  const login = async (nextToken, nextUser) => {
+    setToken(nextToken);
+    setUser(nextUser);
+    await AsyncStorage.setItem('token', nextToken);
+    await AsyncStorage.setItem('user', JSON.stringify(nextUser));
   };
 
   const logout = async () => {
     setToken(null);
     setUser(null);
-    await AsyncStorage.removeItem('token');
-    await AsyncStorage.removeItem('user');
+    await AsyncStorage.multiRemove(['token', 'user']);
   };
 
   if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={THEME.primary} />
-      </View>
-    );
+    return <CenteredLoader />;
   }
 
   return (
     <AuthContext.Provider value={{ token, user, login, logout }}>
       <SafeAreaProvider>
-        {token ? <MainScreen /> : <AuthNavigator />}
+        {token ? <MainScreen /> : <AuthScreen />}
       </SafeAreaProvider>
     </AuthContext.Provider>
   );
 }
 
-// --- Auth Navigator ---
-function AuthNavigator() {
-  const [view, setView] = useState('login');
-  return view === 'login' ? (
-    <LoginScreen onSwitch={() => setView('signup')} onForgot={() => setView('forgot')} />
-  ) : view === 'signup' ? (
-    <SignupScreen onSwitch={() => setView('login')} />
-  ) : view === 'forgot' ? (
-    <ForgotPasswordScreen onBack={() => setView('login')} onReset={() => setView('reset')} />
-  ) : (
-    <ResetPasswordScreen onBack={() => setView('forgot')} />
+function CenteredLoader() {
+  return (
+    <View style={styles.center}>
+      <ActivityIndicator size="large" color={THEME.primary} />
+    </View>
   );
 }
 
-// --- Login Screen ---
-function LoginScreen({ onSwitch, onForgot }) {
+function AuthScreen() {
   const { login } = useContext(AuthContext);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
+  const [mode, setMode] = useState('login');
+  const [name, setName] = useState('');
+  const [roomNo, setRoomNo] = useState('');
+  const [upiId, setUpiId] = useState('');
+  const [email, setEmail] = useState(USER_EMAIL);
+  const [password, setPassword] = useState(DEMO_PASSWORD);
   const [showPassword, setShowPassword] = useState(false);
-
-  useEffect(() => {
-    const loadCredentials = async () => {
-      try {
-        const savedEmail = await AsyncStorage.getItem('rememberedEmail');
-        const savedPassword = await AsyncStorage.getItem('rememberedPassword');
-        if (savedEmail) {
-          setEmail(savedEmail);
-          setRememberMe(true);
-        }
-        if (savedPassword) setPassword(savedPassword);
-      } catch (e) {
-        console.error('Failed to load credentials', e);
-      }
-    };
-    loadCredentials();
-  }, []);
-
-  const handleLogin = async () => {
-    if (!email || !password) return Alert.alert('Error', 'Please fill all fields');
-    setLoading(true);
-    try {
-      const res = await fetch(`${API_URL}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Login failed');
-
-      if (rememberMe) {
-        await AsyncStorage.setItem('rememberedEmail', email);
-        await AsyncStorage.setItem('rememberedPassword', password);
-      } else {
-        await AsyncStorage.removeItem('rememberedEmail');
-        await AsyncStorage.removeItem('rememberedPassword');
-      }
-
-      login(data.token, data.user);
-    } catch (err) {
-      Alert.alert('Login Failed', err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.authContainer}>
-      <View style={styles.authCard}>
-        <View style={styles.logoCircle}>
-          <MaterialCommunityIcons name="wallet" size={40} color={THEME.primary} />
-        </View>
-        <Text style={styles.authTitle}>Welcome Back</Text>
-        <Text style={styles.authSubtitle}>Sign in to continue to LendStore</Text>
-
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Email Address</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="example@mail.com"
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
-          />
-        </View>
-
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Password</Text>
-          <View style={styles.passwordContainer}>
-            <TextInput
-              style={styles.passwordInput}
-              placeholder="Password"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPassword}
-            />
-            <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
-              <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color={THEME.textSecondary} />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <TouchableOpacity
-          style={styles.rememberMeContainer}
-          onPress={() => setRememberMe(!rememberMe)}
-          activeOpacity={0.7}
-        >
-          <Ionicons
-            name={rememberMe ? "checkbox" : "square-outline"}
-            size={20}
-            color={rememberMe ? THEME.primary : THEME.textSecondary}
-          />
-          <Text style={styles.rememberMeText}>Remember Me</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity onPress={onForgot} style={styles.linkButton}>
-          <Text style={styles.linkText}>Forgot password?</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.primaryButtonLarge} onPress={handleLogin} disabled={loading}>
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonTextLarge}>Sign In</Text>}
-        </TouchableOpacity>
-
-        <TouchableOpacity onPress={onSwitch} style={styles.switchButton}>
-          <Text style={styles.switchText}>Don't have an account? <Text style={styles.switchHighlight}>Create Account</Text></Text>
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
-  );
-}
-
-// --- Forgot Password Screen ---
-function ForgotPasswordScreen({ onBack, onReset }) {
-  const [email, setEmail] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('');
-
-  const handleSendReset = async () => {
-    if (!email) return Alert.alert('Error', 'Please enter your email');
-    setLoading(true);
-    try {
-      const res = await fetch(`${API_URL}/auth/forgot-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Unable to send reset email');
-      setMessage('If the email exists, reset instructions have been sent. Check your inbox.');
-    } catch (err) {
-      Alert.alert('Request Failed', err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.authContainer}>
-      <View style={styles.authCard}>
-        <View style={styles.logoCircle}>
-          <MaterialCommunityIcons name="email" size={40} color={THEME.primary} />
-        </View>
-        <Text style={styles.authTitle}>Forgot Password</Text>
-        <Text style={styles.authSubtitle}>Enter your email to receive reset instructions.</Text>
-
-        {message ? <Text style={styles.successMessage}>{message}</Text> : null}
-
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Email Address</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="example@mail.com"
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
-          />
-        </View>
-
-        <TouchableOpacity style={styles.primaryButtonLarge} onPress={handleSendReset} disabled={loading}>
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonTextLarge}>Send Reset Email</Text>}
-        </TouchableOpacity>
-
-        <TouchableOpacity onPress={onReset} style={styles.switchButton}>
-          <Text style={styles.switchText}>Have a reset token? <Text style={styles.switchHighlight}>Reset Password</Text></Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity onPress={onBack} style={styles.linkButton}>
-          <Text style={styles.linkText}>Back to login</Text>
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
-  );
-}
-
-function ResetPasswordScreen({ onBack }) {
-  const [token, setToken] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleReset = async () => {
-    if (!token || !password || !confirmPassword) return Alert.alert('Error', 'Please fill all fields');
-    if (password !== confirmPassword) return Alert.alert('Error', 'Passwords do not match');
+  const submit = async () => {
+    if (!email || !password || (mode === 'signup' && !name)) {
+      return Alert.alert('Missing details', mode === 'signup' ? 'Name, email, and password are required.' : 'Email and password are required.');
+    }
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/auth/reset-password`, {
+      const path = mode === 'signup' ? '/auth/register' : '/auth/login';
+      const body = mode === 'signup' ? { name, email, password, roomNo, upiId, messPlan: 'standard' } : { email, password };
+      const res = await fetch(`${API_URL}${path}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, password })
+        body: JSON.stringify(body)
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Reset failed');
-      Alert.alert('Success', 'Password updated successfully. Please log in with your new password.');
-      onBack();
-    } catch (err) {
-      Alert.alert('Reset Failed', err.message);
+      if (!res.ok) throw new Error(data.message || 'Authentication failed');
+      await login(data.token, data.user);
+    } catch (error) {
+      Alert.alert('Access failed', error.message);
     } finally {
       setLoading(false);
     }
   };
 
+  const fillDemo = (type) => {
+    setEmail(type === 'admin' ? ADMIN_EMAIL : USER_EMAIL);
+    setPassword(DEMO_PASSWORD);
+  };
+
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.authContainer}>
-      <View style={styles.authCard}>
-        <View style={styles.logoCircle}>
-          <Ionicons name="lock-closed" size={40} color={THEME.primary} />
+      <StatusBar barStyle="light-content" backgroundColor={THEME.secondary} />
+      <View style={styles.authPanel}>
+        <View style={styles.brandMark}>
+          <MaterialCommunityIcons name="silverware-fork-knife" size={34} color={THEME.accent} />
         </View>
-        <Text style={styles.authTitle}>Reset Password</Text>
-        <Text style={styles.authSubtitle}>Enter the token from your email and set a new password.</Text>
+        <Text style={styles.authTitle}>HostelLedger</Text>
+        <Text style={styles.authSubtitle}>Mess bills, roommate splits, borrow returns, UPI reminders, and hostel ledgers in one polished app.</Text>
 
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Reset Token</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Paste your reset token"
-            value={token}
-            onChangeText={setToken}
-            autoCapitalize="none"
-          />
+        <View style={styles.segment}>
+          <TouchableOpacity style={[styles.segmentButton, mode === 'login' && styles.segmentActive]} onPress={() => setMode('login')}>
+            <Text style={[styles.segmentText, mode === 'login' && styles.segmentTextActive]}>Sign in</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.segmentButton, mode === 'signup' && styles.segmentActive]} onPress={() => setMode('signup')}>
+            <Text style={[styles.segmentText, mode === 'signup' && styles.segmentTextActive]}>Join hostel</Text>
+          </TouchableOpacity>
         </View>
 
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>New Password</Text>
+        {mode === 'signup' ? (
+          <>
+            <LabeledInput label="Full name" value={name} onChangeText={setName} placeholder="Rahul Sharma" />
+            <View style={styles.twoColumn}>
+              <LabeledInput label="Room" value={roomNo} onChangeText={setRoomNo} placeholder="B-204" compact />
+              <LabeledInput label="UPI ID" value={upiId} onChangeText={setUpiId} placeholder="name@upi" compact />
+            </View>
+          </>
+        ) : null}
+
+        <LabeledInput label="Email" value={email} onChangeText={setEmail} placeholder="you@hostel.local" keyboardType="email-address" autoCapitalize="none" />
+        <Text style={styles.label}>Password</Text>
+        <View style={styles.passwordBox}>
           <TextInput
-            style={styles.input}
-            placeholder="New password"
+            style={styles.passwordInput}
             value={password}
             onChangeText={setPassword}
-            secureTextEntry
+            secureTextEntry={!showPassword}
+            placeholder="Password"
+            placeholderTextColor={THEME.muted}
           />
+          <TouchableOpacity onPress={() => setShowPassword((value) => !value)} style={styles.iconButton}>
+            <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={THEME.muted} />
+          </TouchableOpacity>
         </View>
 
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Confirm Password</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Confirm password"
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-            secureTextEntry
-          />
-        </View>
-
-        <TouchableOpacity style={styles.primaryButtonLarge} onPress={handleReset} disabled={loading}>
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonTextLarge}>Reset Password</Text>}
-        </TouchableOpacity>
-
-        <TouchableOpacity onPress={onBack} style={styles.linkButton}>
-          <Text style={styles.linkText}>Back to forgot password</Text>
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
-  );
-}
-
-// --- Signup Screen ---
-function SignupScreen({ onSwitch }) {
-  const { login } = useContext(AuthContext);
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-
-  const handleSignup = async () => {
-    if (!name || !email || !password) return Alert.alert('Error', 'Please fill all fields');
-    setLoading(true);
-    try {
-      const res = await fetch(`${API_URL}/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Registration failed');
-      login(data.token, data.user);
-    } catch (err) {
-      Alert.alert('Registration Failed', err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.authContainer}>
-      <View style={styles.authCard}>
-        <View style={styles.logoCircle}>
-          <MaterialCommunityIcons name="account-plus" size={40} color={THEME.primary} />
-        </View>
-        <Text style={styles.authTitle}>Create Account</Text>
-        <Text style={styles.authSubtitle}>Start tracking your shared spends</Text>
-
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Full Name</Text>
-          <TextInput style={styles.input} placeholder="John Doe" value={name} onChangeText={setName} />
-        </View>
-
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Email Address</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="example@mail.com"
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
-          />
-        </View>
-
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Password</Text>
-          <View style={styles.passwordContainer}>
-            <TextInput
-              style={styles.passwordInput}
-              placeholder="Password"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPassword}
-            />
-            <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
-              <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color={THEME.textSecondary} />
+        {mode === 'login' ? (
+          <View style={styles.demoRow}>
+            <TouchableOpacity style={styles.demoButton} onPress={() => fillDemo('admin')}>
+              <Ionicons name="business-outline" size={16} color={THEME.primary} />
+              <Text style={styles.demoText}>Admin demo</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.demoButton} onPress={() => fillDemo('user')}>
+              <Ionicons name="bed-outline" size={16} color={THEME.primary} />
+              <Text style={styles.demoText}>Hostler demo</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        ) : null}
 
-        <TouchableOpacity style={styles.primaryButtonLarge} onPress={handleSignup} disabled={loading}>
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonTextLarge}>Sign Up</Text>}
-        </TouchableOpacity>
-
-        <TouchableOpacity onPress={onSwitch} style={styles.switchButton}>
-          <Text style={styles.switchText}>Already have an account? <Text style={styles.switchHighlight}>Log In</Text></Text>
+        <TouchableOpacity style={styles.primaryButtonLarge} onPress={submit} disabled={loading}>
+          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonTextLarge}>{mode === 'signup' ? 'Create hostler account' : 'Enter dashboard'}</Text>}
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
   );
 }
 
-// --- Main App Logic ---
 function MainScreen() {
-  const { logout, user } = useContext(AuthContext);
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const { token, user, logout } = useContext(AuthContext);
+  const [activeTab, setActiveTab] = useState(user?.role === 'admin' ? 'admin' : 'home');
   const [loading, setLoading] = useState(true);
-  const [data, setData] = useState({
-    users: [],
-    expenses: [],
-    bills: [],
-    summary: { balances: [], settlements: [] }
-  });
   const [error, setError] = useState(null);
+  const [data, setData] = useState(emptyData);
 
-  const fetchData = useCallback(async () => {
+  const apiFetch = useCallback(async (path, options = {}) => {
+    const res = await fetch(`${API_URL}${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        ...(options.headers || {})
+      }
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.message || `Server returned ${res.status}`);
+    return json;
+  }, [token]);
+
+  const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const fetchJson = async (url) => {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`Server returned ${res.status}`);
-        const json = await res.json();
-        return json;
-      };
-
-      const [users, expenses, bills, summary] = await Promise.all([
-        fetchJson(`${API_URL}/users`),
-        fetchJson(`${API_URL}/expenses`),
-        fetchJson(`${API_URL}/bills`),
-        fetchJson(`${API_URL}/summary`)
-      ]);
-
-      setData({
-        users: Array.isArray(users) ? users : [],
-        expenses: Array.isArray(expenses) ? expenses : [],
-        bills: Array.isArray(bills) ? bills : [],
-        summary: {
-          balances: Array.isArray(summary?.balances) ? summary.balances : [],
-          settlements: Array.isArray(summary?.settlements) ? summary.settlements : []
-        }
-      });
+      const appData = await apiFetch('/app-data');
+      setData(normalizeData(appData));
       setError(null);
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [apiFetch]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    refresh();
+  }, [refresh]);
 
+  const isAdmin = user?.role === 'admin';
+  const tabs = isAdmin ? adminTabs : userTabs;
+
+  const screenProps = { data, refresh, loading, apiFetch, user };
   const renderContent = () => {
-    // If we have an error and no data yet, show error view instead of breaking
-    if (error && data.users.length === 0 && data.expenses.length === 0) {
+    if (error && data.residents.length === 0 && data.expenses.length === 0) {
       return (
         <View style={styles.center}>
-          <Ionicons name="cloud-offline-outline" size={64} color={THEME.textSecondary} />
-          <Text style={styles.errorTitle}>Connection Error</Text>
+          <Ionicons name="cloud-offline-outline" size={58} color={THEME.muted} />
+          <Text style={styles.errorTitle}>Cannot load hostel data</Text>
           <Text style={styles.errorSubtitle}>{error}</Text>
-          <TouchableOpacity style={styles.primaryButton} onPress={fetchData}>
-            <Text style={styles.buttonText}>Try Again</Text>
+          <TouchableOpacity style={styles.primaryButton} onPress={refresh}>
+            <Text style={styles.buttonText}>Retry</Text>
           </TouchableOpacity>
         </View>
       );
     }
 
     switch (activeTab) {
-      case 'dashboard':
-        return <Dashboard data={data} refresh={fetchData} loading={loading} user={user} logout={logout} />;
-      case 'users':
-        return <Users data={data} refresh={fetchData} loading={loading} />;
-      case 'expenses':
-        return <Expenses data={data} refresh={fetchData} loading={loading} />;
-      case 'bills':
-        return <Bills data={data} refresh={fetchData} loading={loading} />;
-      case 'balances':
-        return <Balances data={data} refresh={fetchData} loading={loading} />;
+      case 'admin':
+        return <AdminDashboard {...screenProps} />;
+      case 'residents':
+        return <ResidentsManager {...screenProps} />;
+      case 'messAdmin':
+        return <MessControl {...screenProps} admin />;
+      case 'dues':
+        return <DuesManager {...screenProps} />;
+      case 'ledger':
+        return <LedgerView {...screenProps} admin />;
+      case 'home':
+        return <HostlerDashboard {...screenProps} />;
+      case 'mess':
+        return <MessControl {...screenProps} />;
+      case 'splits':
+        return <SplitsView {...screenProps} />;
+      case 'borrow':
+        return <BorrowView {...screenProps} />;
+      case 'chat':
+        return <ChatLedger {...screenProps} />;
       default:
-        return <Dashboard data={data} refresh={fetchData} loading={loading} user={user} logout={logout} />;
+        return isAdmin ? <AdminDashboard {...screenProps} /> : <HostlerDashboard {...screenProps} />;
     }
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={THEME.surface} />
+      <StatusBar barStyle="light-content" backgroundColor={THEME.secondary} />
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>LendStore</Text>
+        <View>
+          <Text style={styles.headerTitle}>HostelLedger</Text>
+          <Text style={styles.headerSub}>{isAdmin ? 'Management dashboard' : `${user?.roomNo || 'Hostler'} dashboard`}</Text>
+        </View>
         <View style={styles.headerRight}>
-          <Text style={styles.headerUser}>{user?.name || 'User'}</Text>
+          <View style={styles.rolePill}>
+            <Text style={styles.rolePillText}>{isAdmin ? 'Admin' : 'Hostler'}</Text>
+          </View>
           <TouchableOpacity onPress={logout} style={styles.logoutIcon}>
-            <Ionicons name="log-out-outline" size={24} color={THEME.error} />
+            <Ionicons name="log-out-outline" size={21} color="#fff" />
           </TouchableOpacity>
         </View>
       </View>
-
-      <View style={styles.content}>
-        {renderContent()}
-      </View>
-
+      {error ? (
+        <View style={styles.errorBanner}>
+          <Ionicons name="warning-outline" size={16} color={THEME.error} />
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      ) : null}
+      <View style={styles.content}>{renderContent()}</View>
       <View style={styles.tabBar}>
-        <TabItem label="Home" icon="home-outline" activeIcon="home" active={activeTab === 'dashboard'} onPress={() => setActiveTab('dashboard')} />
-        <TabItem label="Balances" icon="pie-chart-outline" activeIcon="pie-chart" active={activeTab === 'balances'} onPress={() => setActiveTab('balances')} />
-        <TabItem label="Spends" icon="wallet-outline" activeIcon="wallet" active={activeTab === 'expenses'} onPress={() => setActiveTab('expenses')} />
-        <TabItem label="Bills" icon="calendar-outline" activeIcon="calendar" active={activeTab === 'bills'} onPress={() => setActiveTab('bills')} />
-        <TabItem label="Users" icon="people-outline" activeIcon="people" active={activeTab === 'users'} onPress={() => setActiveTab('users')} />
+        {tabs.map((tab) => (
+          <TabItem key={tab.key} {...tab} active={activeTab === tab.key} onPress={() => setActiveTab(tab.key)} />
+        ))}
       </View>
     </SafeAreaView>
   );
 }
 
+const emptyData = {
+  residents: [],
+  users: [],
+  menus: [],
+  feedback: [],
+  attendance: [],
+  dues: [],
+  expenses: [],
+  summary: { balances: [], settlements: [] },
+  borrows: [],
+  messages: [],
+  my: { dues: [], borrows: [], balance: { balance: 0 } }
+};
+
+const adminTabs = [
+  { key: 'admin', label: 'Admin', icon: 'grid-outline', activeIcon: 'grid' },
+  { key: 'residents', label: 'Users', icon: 'people-outline', activeIcon: 'people' },
+  { key: 'messAdmin', label: 'Mess', icon: 'restaurant-outline', activeIcon: 'restaurant' },
+  { key: 'dues', label: 'Dues', icon: 'receipt-outline', activeIcon: 'receipt' },
+  { key: 'ledger', label: 'Ledger', icon: 'analytics-outline', activeIcon: 'analytics' }
+];
+
+const userTabs = [
+  { key: 'home', label: 'Home', icon: 'home-outline', activeIcon: 'home' },
+  { key: 'mess', label: 'Mess', icon: 'restaurant-outline', activeIcon: 'restaurant' },
+  { key: 'splits', label: 'Split', icon: 'swap-horizontal-outline', activeIcon: 'swap-horizontal' },
+  { key: 'borrow', label: 'Borrow', icon: 'repeat-outline', activeIcon: 'repeat' },
+  { key: 'chat', label: 'Chat', icon: 'chatbubbles-outline', activeIcon: 'chatbubbles' }
+];
+
+function normalizeData(data) {
+  return {
+    ...emptyData,
+    ...data,
+    residents: Array.isArray(data?.residents) ? data.residents : [],
+    users: Array.isArray(data?.residents) ? data.residents : [],
+    menus: Array.isArray(data?.menus) ? data.menus : [],
+    feedback: Array.isArray(data?.feedback) ? data.feedback : [],
+    attendance: Array.isArray(data?.attendance) ? data.attendance : [],
+    dues: Array.isArray(data?.dues) ? data.dues : [],
+    expenses: Array.isArray(data?.expenses) ? data.expenses : [],
+    borrows: Array.isArray(data?.borrows) ? data.borrows : [],
+    messages: Array.isArray(data?.messages) ? data.messages : [],
+    summary: data?.summary || emptyData.summary,
+    my: data?.my || emptyData.my
+  };
+}
+
 function TabItem({ label, icon, activeIcon, active, onPress }) {
   return (
-    <TouchableOpacity style={styles.tabItem} onPress={onPress}>
-      <Ionicons
-        name={active ? activeIcon : icon}
-        size={24}
-        color={active ? THEME.primary : THEME.textSecondary}
-      />
-      <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{label}</Text>
+    <TouchableOpacity style={styles.tabItem} onPress={onPress} activeOpacity={0.75}>
+      <Ionicons name={active ? activeIcon : icon} size={22} color={active ? THEME.accent : '#d7dfdc'} />
+      <Text style={[styles.tabLabel, active && styles.tabLabelActive]} numberOfLines={1}>{label}</Text>
     </TouchableOpacity>
   );
 }
 
-function Dashboard({ data, refresh, loading, user, logout }) {
-  const expenses = Array.isArray(data?.expenses) ? data.expenses : [];
-  const recentExpenses = [...expenses]
-    .sort((a, b) => new Date(b.date) - new Date(a.date))
-    .slice(0, 5);
+function AdminDashboard({ data, refresh, loading }) {
+  const unpaid = data.dues.filter((due) => due.status !== 'paid');
+  const collected = data.dues.reduce((sum, due) => sum + Number(due.paidAmount || 0), 0);
+  const attendanceToday = data.attendance.filter((item) => String(item.attendanceDate).slice(0, 10) === todayISO()).length;
+  const avgRating = data.feedback.length ? (data.feedback.reduce((sum, item) => sum + Number(item.rating || 0), 0) / data.feedback.length).toFixed(1) : '0.0';
 
   return (
-    <ScrollView
-      style={styles.scrollView}
-      showsVerticalScrollIndicator={false}
-      refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} />}
-    >
-      <View style={styles.heroSection}>
-        <View>
-          <Text style={styles.greeting}>Bills & Balances</Text>
-          <Text style={styles.subGreeting}>Your current bill status and balance summary</Text>
+    <AppScroll loading={loading} refresh={refresh}>
+      <PremiumHero
+        eyebrow="Hostel management"
+        title="Mess, money, and roommate operations"
+        subtitle="Track meals, monthly dues, resident payments, borrow items, shared spends, and chat-ledger activity from one command center."
+        icon="shield-crown-outline"
+      />
+      <View style={styles.metricsGrid}>
+        <MetricCard title="Hostlers" value={data.residents.length} icon="account-group" color={THEME.primary} />
+        <MetricCard title="Pending dues" value={unpaid.length} icon="alert-circle-outline" color={THEME.error} />
+        <MetricCard title="Collected" value={currency(collected)} icon="cash-check" color={THEME.success} />
+        <MetricCard title="Today scans" value={attendanceToday} icon="qrcode-scan" color={THEME.accent} />
+      </View>
+      <Section title="Mess health">
+        <View style={styles.insightRow}>
+          <Insight title="Feedback score" value={`${avgRating}/5`} detail={`${data.feedback.length} recent reviews`} />
+          <Insight title="Active borrows" value={data.borrows.filter((item) => item.status === 'borrowed').length} detail="items still pending" />
+        </View>
+      </Section>
+      <Section title="Recent ledger">
+        <LedgerList messages={data.messages.slice(0, 5)} />
+      </Section>
+    </AppScroll>
+  );
+}
+
+function HostlerDashboard({ data, refresh, loading, user }) {
+  const todayMenu = data.menus[0];
+  const myDue = data.dues.find((due) => due.userId === user?.id || String(due.userId) === String(user?._id)) || data.my?.dues?.[0];
+  const balance = Number(data.my?.balance?.balance || 0);
+  const pendingBorrow = data.borrows.filter((item) => item.status === 'borrowed' && (item.borrowerId === user?.id || item.lenderId === user?.id)).length;
+
+  return (
+    <AppScroll loading={loading} refresh={refresh}>
+      <PremiumHero
+        eyebrow={`Room ${user?.roomNo || 'Hostel'}`}
+        title={`Hi, ${user?.name || 'Hostler'}`}
+        subtitle="Your mess menu, monthly bill, roommate split balance, borrowed items, and hostel chat are ready."
+        icon="bed-king-outline"
+      />
+      <View style={styles.metricsGrid}>
+        <MetricCard title="Mess bill" value={currency(myDue?.totalAmount || 0)} icon="food" color={THEME.primary} />
+        <MetricCard title={balance >= 0 ? 'To receive' : 'To pay'} value={currency(Math.abs(balance))} icon="scale-balance" color={balance >= 0 ? THEME.success : THEME.error} />
+        <MetricCard title="Borrow items" value={pendingBorrow} icon="repeat" color={THEME.warning} />
+        <MetricCard title="Split entries" value={data.expenses.length} icon="cash-multiple" color={THEME.accent} />
+      </View>
+      <Section title="Today menu">
+        {todayMenu ? <MenuCard menu={todayMenu} /> : <EmptyState icon="restaurant-outline" message="No mess menu posted yet." />}
+      </Section>
+      <Section title="Settlement shortcuts">
+        <SettlementList settlements={data.summary.settlements.slice(0, 3)} />
+      </Section>
+    </AppScroll>
+  );
+}
+
+function ResidentsManager({ data, refresh, loading, apiFetch }) {
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [roomNo, setRoomNo] = useState('');
+  const [upiId, setUpiId] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const addResident = async () => {
+    if (!name || !email) return Alert.alert('Missing details', 'Name and email are required.');
+    setSubmitting(true);
+    try {
+      await apiFetch('/admin/residents', {
+        method: 'POST',
+        body: JSON.stringify({ name, email, roomNo, upiId, password: DEMO_PASSWORD })
+      });
+      setName('');
+      setEmail('');
+      setRoomNo('');
+      setUpiId('');
+      refresh();
+    } catch (error) {
+      Alert.alert('Resident not added', error.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <View style={styles.flex1}>
+      <View style={styles.formContainer}>
+        <Text style={styles.sectionTitleSmall}>Add hostler</Text>
+        <LabeledInput label="Name" value={name} onChangeText={setName} placeholder="Resident name" />
+        <LabeledInput label="Email" value={email} onChangeText={setEmail} placeholder="resident@hostel.local" keyboardType="email-address" autoCapitalize="none" />
+        <View style={styles.twoColumn}>
+          <LabeledInput label="Room" value={roomNo} onChangeText={setRoomNo} placeholder="B-204" compact />
+          <LabeledInput label="UPI ID" value={upiId} onChangeText={setUpiId} placeholder="name@upi" compact />
+        </View>
+        <TouchableOpacity style={styles.primaryButton} onPress={addResident} disabled={submitting}>
+          {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Create hostler</Text>}
+        </TouchableOpacity>
+      </View>
+      <FlatList
+        data={data.residents}
+        keyExtractor={(item) => idOf(item)}
+        contentContainerStyle={styles.listContent}
+        refreshing={loading}
+        onRefresh={refresh}
+        renderItem={({ item }) => (
+          <View style={styles.cardItem}>
+            <Avatar name={item.name} />
+            <View style={styles.itemBody}>
+              <Text style={styles.itemName}>{item.name}</Text>
+              <Text style={styles.itemMeta}>{item.roomNo || 'No room'} | {item.email}</Text>
+            </View>
+            <View style={styles.statusBadge}>
+              <Text style={styles.statusText}>{item.messPlan || 'standard'}</Text>
+            </View>
+          </View>
+        )}
+        ListEmptyComponent={<EmptyState icon="people-outline" message="No hostlers yet." />}
+      />
+    </View>
+  );
+}
+
+function MessControl({ data, refresh, loading, apiFetch, admin }) {
+  const [menuDate, setMenuDate] = useState(todayISO());
+  const [breakfast, setBreakfast] = useState('');
+  const [lunch, setLunch] = useState('');
+  const [dinner, setDinner] = useState('');
+  const [specialNote, setSpecialNote] = useState('');
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const saveMenu = async () => {
+    if (!menuDate || !breakfast || !lunch || !dinner) return Alert.alert('Missing menu', 'Date, breakfast, lunch, and dinner are required.');
+    setSubmitting(true);
+    try {
+      await apiFetch('/admin/menu', {
+        method: 'POST',
+        body: JSON.stringify({ menuDate, breakfast, lunch, dinner, specialNote })
+      });
+      setBreakfast('');
+      setLunch('');
+      setDinner('');
+      setSpecialNote('');
+      refresh();
+    } catch (error) {
+      Alert.alert('Menu not saved', error.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const markAttendance = async (meal) => {
+    try {
+      await apiFetch('/attendance', {
+        method: 'POST',
+        body: JSON.stringify({ meal, attendanceDate: todayISO(), source: 'qr' })
+      });
+      Alert.alert('Attendance marked', `${meal} attendance recorded from QR.`);
+      refresh();
+    } catch (error) {
+      Alert.alert('Attendance failed', error.message);
+    }
+  };
+
+  const sendFeedback = async () => {
+    try {
+      await apiFetch('/feedback', {
+        method: 'POST',
+        body: JSON.stringify({ menuDate: todayISO(), rating, comment })
+      });
+      setComment('');
+      Alert.alert('Thanks', 'Mess feedback submitted.');
+      refresh();
+    } catch (error) {
+      Alert.alert('Feedback failed', error.message);
+    }
+  };
+
+  return (
+    <AppScroll loading={loading} refresh={refresh}>
+      {admin ? (
+        <Section title="Post daily mess menu">
+          <LabeledInput label="Date" value={menuDate} onChangeText={setMenuDate} placeholder="YYYY-MM-DD" />
+          <LabeledInput label="Breakfast" value={breakfast} onChangeText={setBreakfast} placeholder="Poha, eggs, chai" />
+          <LabeledInput label="Lunch" value={lunch} onChangeText={setLunch} placeholder="Rajma rice, salad" />
+          <LabeledInput label="Dinner" value={dinner} onChangeText={setDinner} placeholder="Paneer, roti, dal" />
+          <LabeledInput label="Notice" value={specialNote} onChangeText={setSpecialNote} placeholder="QR closes after 20 minutes" />
+          <TouchableOpacity style={styles.primaryButton} onPress={saveMenu} disabled={submitting}>
+            {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Publish menu</Text>}
+          </TouchableOpacity>
+        </Section>
+      ) : (
+        <Section title="QR mess attendance">
+          <View style={styles.qrCard}>
+            <MaterialCommunityIcons name="qrcode-scan" size={64} color={THEME.secondary} />
+            <Text style={styles.qrTitle}>Hostel mess QR</Text>
+            <Text style={styles.qrSub}>Tap a meal to simulate scan-based attendance.</Text>
+          </View>
+          <View style={styles.actionRow}>
+            {['breakfast', 'lunch', 'dinner'].map((meal) => (
+              <TouchableOpacity key={meal} style={styles.smallAction} onPress={() => markAttendance(meal)}>
+                <Text style={styles.smallActionText}>{meal}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </Section>
+      )}
+
+      <Section title="Menus">
+        {data.menus.length ? data.menus.map((menu) => <MenuCard key={idOf(menu)} menu={menu} />) : <EmptyState icon="restaurant-outline" message="No menus posted yet." />}
+      </Section>
+
+      {!admin ? (
+        <Section title="Feedback">
+          <View style={styles.ratingRow}>
+            {[1, 2, 3, 4, 5].map((star) => (
+              <TouchableOpacity key={star} onPress={() => setRating(star)}>
+                <Ionicons name={star <= rating ? 'star' : 'star-outline'} size={28} color={THEME.accent} />
+              </TouchableOpacity>
+            ))}
+          </View>
+          <TextInput
+            style={[styles.input, styles.textArea]}
+            value={comment}
+            onChangeText={setComment}
+            placeholder="Food quality, hygiene, quantity..."
+            placeholderTextColor={THEME.muted}
+            multiline
+          />
+          <TouchableOpacity style={styles.primaryButton} onPress={sendFeedback}>
+            <Text style={styles.buttonText}>Send feedback</Text>
+          </TouchableOpacity>
+        </Section>
+      ) : (
+        <Section title="Latest feedback">
+          {data.feedback.slice(0, 8).map((item) => (
+            <View key={idOf(item)} style={styles.commentItem}>
+              <Text style={styles.itemName}>{item.name} | {item.rating}/5</Text>
+              <Text style={styles.itemMeta}>{item.roomNo || 'Room'} | {shortDate(item.createdAt)}</Text>
+              <Text style={styles.commentText}>{item.comment || 'No comment'}</Text>
+            </View>
+          ))}
+        </Section>
+      )}
+    </AppScroll>
+  );
+}
+
+function DuesManager({ data, refresh, loading, apiFetch }) {
+  const [userId, setUserId] = useState('');
+  const [billMonth, setBillMonth] = useState(monthISO());
+  const [mealsCount, setMealsCount] = useState('56');
+  const [ratePerMeal, setRatePerMeal] = useState('55');
+  const [fixedCharges, setFixedCharges] = useState('400');
+  const [paidAmount, setPaidAmount] = useState('0');
+  const [status, setStatus] = useState('unpaid');
+
+  useEffect(() => {
+    if (!userId && data.residents[0]) setUserId(idOf(data.residents[0]));
+  }, [data.residents, userId]);
+
+  const saveDue = async () => {
+    try {
+      await apiFetch('/admin/dues', {
+        method: 'POST',
+        body: JSON.stringify({ userId, billMonth, mealsCount, ratePerMeal, fixedCharges, paidAmount, status })
+      });
+      refresh();
+      Alert.alert('Bill updated', 'Monthly mess due has been recalculated.');
+    } catch (error) {
+      Alert.alert('Due not saved', error.message);
+    }
+  };
+
+  return (
+    <AppScroll loading={loading} refresh={refresh}>
+      <Section title="Auto monthly mess bill">
+        <Text style={styles.label}>Hostler</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillScroll}>
+          {data.residents.map((resident) => (
+            <TouchableOpacity key={idOf(resident)} style={[styles.pill, userId === idOf(resident) && styles.pillActive]} onPress={() => setUserId(idOf(resident))}>
+              <Text style={[styles.pillText, userId === idOf(resident) && styles.pillTextActive]}>{resident.name}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+        <View style={styles.twoColumn}>
+          <LabeledInput label="Month" value={billMonth} onChangeText={setBillMonth} placeholder="YYYY-MM" compact />
+          <LabeledInput label="Meals" value={mealsCount} onChangeText={setMealsCount} keyboardType="numeric" compact />
+        </View>
+        <View style={styles.twoColumn}>
+          <LabeledInput label="Rate" value={ratePerMeal} onChangeText={setRatePerMeal} keyboardType="numeric" compact />
+          <LabeledInput label="Fixed" value={fixedCharges} onChangeText={setFixedCharges} keyboardType="numeric" compact />
+        </View>
+        <View style={styles.twoColumn}>
+          <LabeledInput label="Paid" value={paidAmount} onChangeText={setPaidAmount} keyboardType="numeric" compact />
+          <LabeledInput label="Status" value={status} onChangeText={setStatus} placeholder="paid/partial/unpaid" compact />
+        </View>
+        <TouchableOpacity style={styles.primaryButton} onPress={saveDue}>
+          <Text style={styles.buttonText}>Save mess bill</Text>
+        </TouchableOpacity>
+      </Section>
+      <Section title="Who paid / who didn't">
+        {data.dues.map((due) => <DueCard key={idOf(due)} due={due} />)}
+      </Section>
+    </AppScroll>
+  );
+}
+
+function SplitsView({ data, refresh, loading, apiFetch, user }) {
+  const [showModal, setShowModal] = useState(false);
+  return (
+    <View style={styles.flex1}>
+      <TouchableOpacity style={styles.fab} onPress={() => setShowModal(true)}>
+        <Ionicons name="add" size={30} color="#fff" />
+      </TouchableOpacity>
+      <FlatList
+        data={data.expenses}
+        keyExtractor={(item) => idOf(item)}
+        contentContainerStyle={styles.listContent}
+        refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} />}
+        ListHeaderComponent={() => (
+          <>
+            <PremiumHero eyebrow="Roommate split" title="Grocery and shared expense ledger" subtitle="Add hostel spends, split equally, and keep UPI reminders one tap away." icon="cash-multiple" />
+            <SettlementList settlements={data.summary.settlements} apiFetch={apiFetch} residents={data.residents} />
+          </>
+        )}
+        renderItem={({ item }) => <ExpenseCard expense={item} />}
+        ListEmptyComponent={<EmptyState icon="receipt-outline" message="No shared spends yet." />}
+      />
+      <ExpenseModal visible={showModal} onClose={() => setShowModal(false)} data={data} apiFetch={apiFetch} refresh={refresh} user={user} />
+    </View>
+  );
+}
+
+function BorrowView({ data, refresh, loading, apiFetch, user }) {
+  const [itemName, setItemName] = useState('');
+  const [otherUser, setOtherUser] = useState('');
+  const [direction, setDirection] = useState('lent');
+  const [notes, setNotes] = useState('');
+
+  useEffect(() => {
+    const firstOther = data.residents.find((resident) => resident.id !== user?.id);
+    if (!otherUser && firstOther) setOtherUser(idOf(firstOther));
+  }, [data.residents, otherUser, user?.id]);
+
+  const saveBorrow = async () => {
+    if (!itemName || !otherUser) return Alert.alert('Missing details', 'Item and hostler are required.');
+    try {
+      await apiFetch('/borrow', {
+        method: 'POST',
+        body: JSON.stringify({
+          lenderId: direction === 'lent' ? user.id : otherUser,
+          borrowerId: direction === 'lent' ? otherUser : user.id,
+          itemName,
+          notes,
+          dueDate: null
+        })
+      });
+      setItemName('');
+      setNotes('');
+      refresh();
+    } catch (error) {
+      Alert.alert('Borrow item not saved', error.message);
+    }
+  };
+
+  const markReturned = async (id) => {
+    try {
+      await apiFetch(`/borrow/${id}/return`, { method: 'PATCH' });
+      refresh();
+    } catch (error) {
+      Alert.alert('Return failed', error.message);
+    }
+  };
+
+  return (
+    <AppScroll loading={loading} refresh={refresh}>
+      <Section title="Borrow / return tracker">
+        <View style={styles.segment}>
+          <TouchableOpacity style={[styles.segmentButton, direction === 'lent' && styles.segmentActive]} onPress={() => setDirection('lent')}>
+            <Text style={[styles.segmentText, direction === 'lent' && styles.segmentTextActive]}>I gave</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.segmentButton, direction === 'borrowed' && styles.segmentActive]} onPress={() => setDirection('borrowed')}>
+            <Text style={[styles.segmentText, direction === 'borrowed' && styles.segmentTextActive]}>I borrowed</Text>
+          </TouchableOpacity>
+        </View>
+        <LabeledInput label="Item" value={itemName} onChangeText={setItemName} placeholder="Charger, kettle, notes..." />
+        <Text style={styles.label}>Hostler</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillScroll}>
+          {data.residents.filter((resident) => resident.id !== user?.id).map((resident) => (
+            <TouchableOpacity key={idOf(resident)} style={[styles.pill, otherUser === idOf(resident) && styles.pillActive]} onPress={() => setOtherUser(idOf(resident))}>
+              <Text style={[styles.pillText, otherUser === idOf(resident) && styles.pillTextActive]}>{resident.name}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+        <LabeledInput label="Notes" value={notes} onChangeText={setNotes} placeholder="Return condition or reminder" />
+        <TouchableOpacity style={styles.primaryButton} onPress={saveBorrow}>
+          <Text style={styles.buttonText}>Save borrow entry</Text>
+        </TouchableOpacity>
+      </Section>
+      <Section title="Borrow ledger">
+        {data.borrows.map((item) => <BorrowCard key={idOf(item)} item={item} onReturn={markReturned} />)}
+      </Section>
+    </AppScroll>
+  );
+}
+
+function LedgerView({ data, refresh, loading }) {
+  return (
+    <AppScroll loading={loading} refresh={refresh}>
+      <PremiumHero eyebrow="Combined ledger" title="Chat, spend, mess, and borrow trail" subtitle="Every important hostel action is visible for management follow-up." icon="clipboard-list-outline" />
+      <Section title="Split balances">
+        <BalanceList balances={data.summary.balances} />
+      </Section>
+      <Section title="Borrow inventory">
+        {data.borrows.map((item) => <BorrowCard key={idOf(item)} item={item} />)}
+      </Section>
+      <Section title="Chat ledger">
+        <LedgerList messages={data.messages} />
+      </Section>
+    </AppScroll>
+  );
+}
+
+function ChatLedger({ data, refresh, loading, apiFetch }) {
+  const [message, setMessage] = useState('');
+  const [ledgerTag, setLedgerTag] = useState('chat');
+
+  const send = async () => {
+    if (!message) return;
+    try {
+      await apiFetch('/messages', {
+        method: 'POST',
+        body: JSON.stringify({ message, ledgerTag })
+      });
+      setMessage('');
+      refresh();
+    } catch (error) {
+      Alert.alert('Message failed', error.message);
+    }
+  };
+
+  return (
+    <View style={styles.flex1}>
+      <FlatList
+        data={data.messages}
+        keyExtractor={(item) => idOf(item)}
+        inverted
+        contentContainerStyle={styles.chatList}
+        refreshing={loading}
+        onRefresh={refresh}
+        renderItem={({ item }) => <MessageBubble item={item} />}
+        ListEmptyComponent={<EmptyState icon="chatbubbles-outline" message="No hostel messages yet." />}
+      />
+      <View style={styles.composer}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tagScroll}>
+          {['chat', 'mess', 'expense', 'borrow'].map((tag) => (
+            <TouchableOpacity key={tag} style={[styles.tagPill, ledgerTag === tag && styles.tagPillActive]} onPress={() => setLedgerTag(tag)}>
+              <Text style={[styles.tagText, ledgerTag === tag && styles.tagTextActive]}>{tag}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+        <View style={styles.composerRow}>
+          <TextInput style={styles.composerInput} value={message} onChangeText={setMessage} placeholder="Message + ledger note" placeholderTextColor={THEME.muted} />
+          <TouchableOpacity style={styles.sendButton} onPress={send}>
+            <Ionicons name="send" size={20} color="#fff" />
+          </TouchableOpacity>
         </View>
       </View>
+    </View>
+  );
+}
 
-      <View style={styles.metricsGrid}>
-        <MetricCard title="Users" value={data.users?.length || 0} icon="account-group" color={THEME.primary} />
-        <MetricCard title="Total Spends" value={data.expenses?.length || 0} icon="cash-multiple" color={THEME.success} />
-        <MetricCard title="Active Bills" value={data.bills?.length || 0} icon="file-document-outline" color={THEME.warning} />
-        <MetricCard title="Balances" value={data.summary?.balances?.length || 0} icon="scale-balance" color={THEME.accent} />
-      </View>
+function ExpenseModal({ visible, onClose, data, apiFetch, refresh, user }) {
+  const [description, setDescription] = useState('');
+  const [amount, setAmount] = useState('');
+  const [paidBy, setPaidBy] = useState('');
+  const [participants, setParticipants] = useState([]);
+  const [submitting, setSubmitting] = useState(false);
 
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Recent Activity</Text>
-      </View>
+  useEffect(() => {
+    if (visible && data.residents.length) {
+      setPaidBy(String(user?.id || data.residents[0].id));
+      setParticipants(data.residents.map((resident) => idOf(resident)));
+    }
+  }, [visible, data.residents, user?.id]);
 
-      <View style={styles.card}>
-        {recentExpenses.length > 0 ? (
-          recentExpenses.map((expense, index) => (
-            <View key={expense._id || index} style={[styles.recentItem, index === recentExpenses.length - 1 && { borderBottomWidth: 0 }]}>
-              <View style={styles.iconCircle}>
-                <Ionicons name="cart-outline" size={20} color={THEME.primary} />
-              </View>
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={styles.recentItemName} numberOfLines={1}>{expense.description}</Text>
-                <Text style={styles.recentItemMeta}>
-                  {expense.paidBy?.name} | {new Date(expense.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                </Text>
-              </View>
-              <Text style={styles.recentItemAmount}>{currency(expense.amount)}</Text>
+  const toggle = (id) => {
+    setParticipants((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  };
+
+  const save = async () => {
+    if (!description || !amount || !paidBy || !participants.length) return Alert.alert('Missing details', 'Description, amount, payer, and participants are required.');
+    setSubmitting(true);
+    try {
+      await apiFetch('/expenses', {
+        method: 'POST',
+        body: JSON.stringify({ description, amount, paidBy, participants, date: new Date().toISOString() })
+      });
+      setDescription('');
+      setAmount('');
+      onClose();
+      refresh();
+    } catch (error) {
+      Alert.alert('Split not saved', error.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
+        <View style={styles.modalSheet}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>New split</Text>
+            <TouchableOpacity onPress={onClose} style={styles.iconButton}>
+              <Ionicons name="close" size={24} color={THEME.ink} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <LabeledInput label="Description" value={description} onChangeText={setDescription} placeholder="Shared groceries, Maggi stock, room cleaning" />
+            <LabeledInput label="Amount" value={amount} onChangeText={setAmount} keyboardType="numeric" placeholder="0.00" />
+            <Text style={styles.label}>Paid by</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillScroll}>
+              {data.residents.map((resident) => (
+                <TouchableOpacity key={idOf(resident)} style={[styles.pill, paidBy === idOf(resident) && styles.pillActive]} onPress={() => setPaidBy(idOf(resident))}>
+                  <Text style={[styles.pillText, paidBy === idOf(resident) && styles.pillTextActive]}>{resident.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <Text style={styles.label}>Split with</Text>
+            <View style={styles.checkboxGrid}>
+              {data.residents.map((resident) => (
+                <TouchableOpacity key={idOf(resident)} style={[styles.checkbox, participants.includes(idOf(resident)) && styles.checkboxActive]} onPress={() => toggle(idOf(resident))}>
+                  <Ionicons name={participants.includes(idOf(resident)) ? 'checkbox' : 'square-outline'} size={20} color={participants.includes(idOf(resident)) ? THEME.primary : THEME.muted} />
+                  <Text style={[styles.checkboxLabel, participants.includes(idOf(resident)) && styles.checkboxLabelActive]}>{resident.name}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
-          ))
-        ) : (
-          <EmptyState icon="receipt-outline" message="No recent activity yet." />
-        )}
-      </View>
-      <View style={{ height: 40 }} />
+            <TouchableOpacity style={styles.primaryButtonLarge} onPress={save} disabled={submitting}>
+              {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonTextLarge}>Save and split equally</Text>}
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+function AppScroll({ children, loading, refresh }) {
+  return (
+    <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} />}>
+      {children}
+      <View style={{ height: 36 }} />
     </ScrollView>
+  );
+}
+
+function PremiumHero({ eyebrow, title, subtitle, icon }) {
+  return (
+    <View style={styles.heroSection}>
+      <View style={styles.heroTop}>
+        <View style={styles.heroIcon}>
+          <MaterialCommunityIcons name={icon} size={28} color={THEME.accent} />
+        </View>
+        <Text style={styles.heroEyebrow}>{eyebrow}</Text>
+      </View>
+      <Text style={styles.greeting}>{title}</Text>
+      <Text style={styles.subGreeting}>{subtitle}</Text>
+    </View>
   );
 }
 
 function MetricCard({ title, value, icon, color }) {
   return (
     <View style={styles.metricCard}>
-      <View style={[styles.metricIconBox, { backgroundColor: color + '15' }]}>
-        <MaterialCommunityIcons name={icon} size={24} color={color} />
+      <View style={[styles.metricIconBox, { backgroundColor: `${color}18` }]}>
+        <MaterialCommunityIcons name={icon} size={23} color={color} />
       </View>
+      <Text style={styles.metricValue} numberOfLines={1}>{value}</Text>
+      <Text style={styles.metricTitle}>{title}</Text>
+    </View>
+  );
+}
+
+function Section({ title, children }) {
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      <View style={styles.card}>{children}</View>
+    </View>
+  );
+}
+
+function LabeledInput({ label, compact, ...props }) {
+  return (
+    <View style={compact ? styles.compactInputWrap : null}>
+      <Text style={styles.label}>{label}</Text>
+      <TextInput {...props} style={styles.input} placeholderTextColor={THEME.muted} />
+    </View>
+  );
+}
+
+function MenuCard({ menu }) {
+  return (
+    <View style={styles.menuCard}>
+      <View style={styles.rowBetween}>
+        <Text style={styles.itemName}>{shortDate(menu.menuDate)}</Text>
+        <View style={styles.statusBadge}>
+          <Text style={styles.statusText}>Menu</Text>
+        </View>
+      </View>
+      <MealLine icon="weather-sunny" label="Breakfast" value={menu.breakfast} />
+      <MealLine icon="white-balance-sunny" label="Lunch" value={menu.lunch} />
+      <MealLine icon="weather-night" label="Dinner" value={menu.dinner} />
+      {menu.specialNote ? <Text style={styles.noticeText}>{menu.specialNote}</Text> : null}
+    </View>
+  );
+}
+
+function MealLine({ icon, label, value }) {
+  return (
+    <View style={styles.mealLine}>
+      <MaterialCommunityIcons name={icon} size={18} color={THEME.accent} />
+      <Text style={styles.mealLabel}>{label}</Text>
+      <Text style={styles.mealValue}>{value}</Text>
+    </View>
+  );
+}
+
+function DueCard({ due }) {
+  const total = Number(due.totalAmount || 0);
+  const paid = Number(due.paidAmount || 0);
+  const pending = Math.max(total - paid, 0);
+  const color = due.status === 'paid' ? THEME.success : due.status === 'partial' ? THEME.warning : THEME.error;
+  return (
+    <View style={styles.dueCard}>
+      <View style={styles.rowBetween}>
+        <View>
+          <Text style={styles.itemName}>{due.name}</Text>
+          <Text style={styles.itemMeta}>{due.roomNo || 'Room'} | {due.billMonth} | {due.mealsCount} meals</Text>
+        </View>
+        <Text style={[styles.dueStatus, { color }]}>{due.status}</Text>
+      </View>
+      <View style={styles.progressTrack}>
+        <View style={[styles.progressFill, { width: `${total ? Math.min((paid / total) * 100, 100) : 0}%`, backgroundColor: color }]} />
+      </View>
+      <Text style={styles.itemMeta}>Paid {currency(paid)} | Pending {currency(pending)}</Text>
+    </View>
+  );
+}
+
+function ExpenseCard({ expense }) {
+  const count = expense.participants?.length || 1;
+  return (
+    <View style={styles.cardItem}>
+      <View style={[styles.iconCircle, { backgroundColor: `${THEME.primary}14` }]}>
+        <Ionicons name="receipt-outline" size={20} color={THEME.primary} />
+      </View>
+      <View style={styles.itemBody}>
+        <Text style={styles.itemName}>{expense.description}</Text>
+        <Text style={styles.itemMeta}>Paid by {expense.paidBy?.name || 'Hostler'} | split {count} ways | {shortDate(expense.date)}</Text>
+      </View>
+      <Text style={styles.itemPrice}>{currency(expense.amount)}</Text>
+    </View>
+  );
+}
+
+function BorrowCard({ item, onReturn }) {
+  const active = item.status === 'borrowed';
+  return (
+    <View style={styles.cardItem}>
+      <View style={[styles.iconCircle, { backgroundColor: active ? `${THEME.warning}16` : `${THEME.success}14` }]}>
+        <Ionicons name={active ? 'time-outline' : 'checkmark-outline'} size={20} color={active ? THEME.warning : THEME.success} />
+      </View>
+      <View style={styles.itemBody}>
+        <Text style={styles.itemName}>{item.itemName}</Text>
+        <Text style={styles.itemMeta}>{item.lenderName} to {item.borrowerName} | {item.notes || 'No notes'}</Text>
+      </View>
+      {active && onReturn ? (
+        <TouchableOpacity style={styles.returnButton} onPress={() => onReturn(item.id)}>
+          <Text style={styles.returnText}>Returned</Text>
+        </TouchableOpacity>
+      ) : (
+        <Text style={[styles.dueStatus, { color: active ? THEME.warning : THEME.success }]}>{item.status}</Text>
+      )}
+    </View>
+  );
+}
+
+function SettlementList({ settlements, apiFetch, residents }) {
+  if (!settlements?.length) return <EmptyState icon="checkmark-circle-outline" message="Everything is settled." />;
+  const remind = async (settlement) => {
+    const target = residents?.find((resident) => resident.name === settlement.from);
+    if (!apiFetch || !target) return;
+    try {
+      const result = await apiFetch('/reminders/upi', {
+        method: 'POST',
+        body: JSON.stringify({ toUserId: target.id, amount: settlement.amount, note: `Split payment to ${settlement.to}` })
+      });
+      Alert.alert('UPI reminder ready', result.message || 'Reminder queued.');
+    } catch (error) {
+      Alert.alert('Reminder failed', error.message);
+    }
+  };
+  return settlements.map((settlement, index) => (
+    <View key={`${settlement.from}-${settlement.to}-${index}`} style={styles.settlementItem}>
+      <View style={styles.itemBody}>
+        <Text style={styles.itemName}>{settlement.from} pays {settlement.to}</Text>
+        <Text style={styles.itemMeta}>Suggested equal split settlement</Text>
+      </View>
+      <Text style={styles.itemPrice}>{currency(settlement.amount)}</Text>
+      {apiFetch ? (
+        <TouchableOpacity style={styles.remindButton} onPress={() => remind(settlement)}>
+          <Ionicons name="notifications-outline" size={18} color="#fff" />
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  ));
+}
+
+function BalanceList({ balances }) {
+  if (!balances?.length) return <EmptyState icon="scale-outline" message="No balances yet." />;
+  return balances.map((item) => {
+    const positive = Number(item.balance || 0) >= 0;
+    return (
+      <View key={item.userId} style={styles.balanceItem}>
+        <Avatar name={item.name} small />
+        <View style={styles.itemBody}>
+          <Text style={styles.itemName}>{item.name}</Text>
+          <Text style={[styles.itemMeta, { color: positive ? THEME.success : THEME.error }]}>{positive ? 'To receive' : 'To pay'}</Text>
+        </View>
+        <Text style={[styles.balanceValue, { color: positive ? THEME.success : THEME.error }]}>{currency(Math.abs(item.balance || 0))}</Text>
+      </View>
+    );
+  });
+}
+
+function LedgerList({ messages }) {
+  if (!messages?.length) return <EmptyState icon="chatbox-ellipses-outline" message="No ledger messages yet." />;
+  return messages.map((item) => <MessageBubble key={idOf(item)} item={item} compact />);
+}
+
+function MessageBubble({ item, compact }) {
+  return (
+    <View style={[styles.messageBubble, compact && styles.messageCompact]}>
+      <View style={styles.rowBetween}>
+        <Text style={styles.messageName}>{item.name}</Text>
+        <Text style={styles.messageTag}>{item.ledgerTag || 'chat'}</Text>
+      </View>
+      <Text style={styles.messageText}>{item.message}</Text>
+      <Text style={styles.itemMeta}>{item.roomNo || 'Hostel'} | {shortDate(item.createdAt)}</Text>
+    </View>
+  );
+}
+
+function Insight({ title, value, detail }) {
+  return (
+    <View style={styles.insight}>
       <Text style={styles.metricValue}>{value}</Text>
       <Text style={styles.metricTitle}>{title}</Text>
+      <Text style={styles.itemMeta}>{detail}</Text>
+    </View>
+  );
+}
+
+function Avatar({ name, small }) {
+  return (
+    <View style={small ? styles.avatarSmall : styles.avatar}>
+      <Text style={small ? styles.avatarTextSmall : styles.avatarText}>{name?.charAt(0)?.toUpperCase() || 'H'}</Text>
     </View>
   );
 }
@@ -652,622 +1168,144 @@ function MetricCard({ title, value, icon, color }) {
 function EmptyState({ icon, message }) {
   return (
     <View style={styles.emptyContainer}>
-      <Ionicons name={icon} size={48} color={THEME.border} />
+      <Ionicons name={icon} size={42} color={THEME.border} />
       <Text style={styles.emptyText}>{message}</Text>
     </View>
-  );
-}
-
-function Users({ data, refresh, loading }) {
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-
-  const addUser = async () => {
-    if (!name) return Alert.alert('Error', 'Name is required');
-    setSubmitting(true);
-    try {
-      const res = await fetch(`${API_URL}/users`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email })
-      });
-      if (!res.ok) throw new Error('Failed to add user');
-      setName('');
-      setEmail('');
-      refresh();
-    } catch (err) {
-      Alert.alert('Error', err.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const deleteUser = (id) => {
-    Alert.alert('Delete User', 'Are you sure you want to remove this user?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: async () => {
-        try {
-          const res = await fetch(`${API_URL}/users/${id}`, { method: 'DELETE' });
-          if (!res.ok) {
-            const errData = await res.json();
-            throw new Error(errData.message || 'Failed to delete');
-          }
-          refresh();
-        } catch (err) {
-          Alert.alert('Error', err.message);
-        }
-      }}
-    ]);
-  };
-
-  return (
-    <View style={styles.flex1}>
-      <View style={styles.formContainer}>
-        <Text style={styles.sectionTitleSmall}>Add New User</Text>
-        <View style={styles.row}>
-          <TextInput
-            style={[styles.input, { flex: 1, marginRight: 8 }]}
-            placeholder="Name"
-            value={name}
-            onChangeText={setName}
-            placeholderTextColor={THEME.textSecondary}
-          />
-          <TextInput
-            style={[styles.input, { flex: 1.5 }]}
-            placeholder="Email (Optional)"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            placeholderTextColor={THEME.textSecondary}
-          />
-        </View>
-        <TouchableOpacity style={styles.primaryButton} onPress={addUser} disabled={submitting}>
-          {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Create User</Text>}
-        </TouchableOpacity>
-      </View>
-
-      <FlatList
-        data={data.users || []}
-        keyExtractor={(item) => item._id || Math.random().toString()}
-        contentContainerStyle={{ padding: 16 }}
-        refreshing={loading}
-        onRefresh={refresh}
-        renderItem={({ item }) => (
-          <View style={styles.cardItem}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{item.name?.charAt(0).toUpperCase()}</Text>
-            </View>
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={styles.itemName}>{item.name}</Text>
-              <Text style={styles.itemMeta}>{item.email || 'No email provided'}</Text>
-            </View>
-            <TouchableOpacity onPress={() => deleteUser(item._id)} style={styles.deleteBtn}>
-              <Ionicons name="trash-outline" size={20} color={THEME.error} />
-            </TouchableOpacity>
-          </View>
-        )}
-        ListEmptyComponent={<EmptyState icon="people-outline" message="No users added yet." />}
-      />
-    </View>
-  );
-}
-
-function Expenses({ data, refresh, loading }) {
-  const [description, setDescription] = useState('');
-  const [amount, setAmount] = useState('');
-  const [paidBy, setPaidBy] = useState('');
-  const [participants, setParticipants] = useState([]);
-  const [submitting, setSubmitting] = useState(false);
-  const [showModal, setShowModal] = useState(false);
-
-  useEffect(() => {
-    if (data.users?.length > 0 && !paidBy) {
-      setPaidBy(data.users[0]._id);
-      setParticipants(data.users.map(u => u._id));
-    }
-  }, [data.users]);
-
-  const addExpense = async () => {
-    if (!description || !amount || !paidBy || participants.length === 0) {
-      return Alert.alert('Error', 'Please fill all fields and select participants');
-    }
-    setSubmitting(true);
-    try {
-      const res = await fetch(`${API_URL}/expenses`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ description, amount, paidBy, participants, date: new Date().toISOString() })
-      });
-      if (!res.ok) throw new Error('Failed to add spend');
-      setDescription('');
-      setAmount('');
-      setShowModal(false);
-      refresh();
-    } catch (err) {
-      Alert.alert('Error', err.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const deleteExpense = (id) => {
-    Alert.alert('Delete Spend', 'Remove this transaction?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: async () => {
-        try {
-          await fetch(`${API_URL}/expenses/${id}`, { method: 'DELETE' });
-          refresh();
-        } catch (err) {
-          Alert.alert('Error', err.message);
-        }
-      }}
-    ]);
-  };
-
-  const toggleParticipant = (id) => {
-    if (participants.includes(id)) {
-      setParticipants(participants.filter(p => p !== id));
-    } else {
-      setParticipants([...participants, id]);
-    }
-  };
-
-  return (
-    <View style={styles.flex1}>
-      <TouchableOpacity style={styles.fab} onPress={() => setShowModal(true)}>
-        <Ionicons name="add" size={32} color="#fff" />
-      </TouchableOpacity>
-
-      <Modal visible={showModal} animationType="slide" transparent>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>New Spend</Text>
-              <TouchableOpacity onPress={() => setShowModal(false)} style={styles.closeIcon}>
-                <Ionicons name="close" size={24} color={THEME.text} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
-              <Text style={styles.label}>Description</Text>
-              <TextInput style={styles.input} placeholder="e.g. Dinner, Rent" value={description} onChangeText={setDescription} />
-
-              <Text style={styles.label}>Amount</Text>
-              <TextInput style={styles.input} placeholder="0.00" value={amount} onChangeText={setAmount} keyboardType="numeric" />
-
-              <Text style={styles.label}>Paid By</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillScroll}>
-                {(data.users || []).map(user => (
-                  <TouchableOpacity
-                    key={user._id}
-                    style={[styles.pill, paidBy === user._id && styles.pillActive]}
-                    onPress={() => setPaidBy(user._id)}
-                  >
-                    <Text style={[styles.pillText, paidBy === user._id && styles.pillTextActive]}>{user.name}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-
-              <Text style={styles.label}>Split with</Text>
-              <View style={styles.checkboxGrid}>
-                {(data.users || []).map(user => (
-                  <TouchableOpacity
-                    key={user._id}
-                    style={[styles.checkbox, participants.includes(user._id) && styles.checkboxActive]}
-                    onPress={() => toggleParticipant(user._id)}
-                  >
-                    <Ionicons
-                      name={participants.includes(user._id) ? "checkbox" : "square-outline"}
-                      size={20}
-                      color={participants.includes(user._id) ? THEME.primary : THEME.textSecondary}
-                    />
-                    <Text style={[styles.checkboxLabel, participants.includes(user._id) && styles.checkboxLabelActive]}>{user.name}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <TouchableOpacity style={styles.primaryButtonLarge} onPress={addExpense} disabled={submitting}>
-                {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonTextLarge}>Save Transaction</Text>}
-              </TouchableOpacity>
-              <View style={{ height: 40 }} />
-            </ScrollView>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      <FlatList
-        data={data.expenses || []}
-        keyExtractor={(item) => item._id || Math.random().toString()}
-        contentContainerStyle={{ padding: 16 }}
-        refreshing={loading}
-        onRefresh={refresh}
-        renderItem={({ item }) => (
-          <View style={styles.cardItem}>
-            <View style={[styles.iconCircle, { backgroundColor: THEME.primary + '10' }]}>
-              <Ionicons name="receipt-outline" size={20} color={THEME.primary} />
-            </View>
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={styles.itemName}>{item.description}</Text>
-              <Text style={styles.itemMeta}>
-                Paid by {item.paidBy?.name} | {new Date(item.date).toLocaleDateString()}
-              </Text>
-            </View>
-            <View style={{ alignItems: 'flex-end' }}>
-              <Text style={styles.itemPrice}>{currency(item.amount)}</Text>
-              <TouchableOpacity onPress={() => deleteExpense(item._id)} style={{ marginTop: 4 }}>
-                <Ionicons name="trash-outline" size={16} color={THEME.textSecondary} />
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-        ListEmptyComponent={<EmptyState icon="cash-outline" message="No transactions recorded." />}
-      />
-    </View>
-  );
-}
-
-function Bills({ data, refresh, loading }) {
-  const [name, setName] = useState('');
-  const [amount, setAmount] = useState('');
-  const [dueDay, setDueDay] = useState('');
-  const [email, setEmail] = useState('');
-  const [notes, setNotes] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [showModal, setShowModal] = useState(false);
-
-  const addBill = async () => {
-    if (!name || !amount || !dueDay || !email) {
-      return Alert.alert('Error', 'Please fill required fields');
-    }
-    setSubmitting(true);
-    try {
-      const res = await fetch(`${API_URL}/bills`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, amount, dueDay, notifyEmail: email, notes })
-      });
-      if (!res.ok) throw new Error('Failed to add bill');
-      setName('');
-      setAmount('');
-      setDueDay('');
-      setEmail('');
-      setNotes('');
-      setShowModal(false);
-      refresh();
-    } catch (err) {
-      Alert.alert('Error', err.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const deleteBill = (id) => {
-    Alert.alert('Delete Bill', 'Stop tracking this bill?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: async () => {
-        try {
-          await fetch(`${API_URL}/bills/${id}`, { method: 'DELETE' });
-          refresh();
-        } catch (err) {
-          Alert.alert('Error', err.message);
-        }
-      }}
-    ]);
-  };
-
-  const runReminders = async () => {
-    try {
-      const res = await fetch(`${API_URL}/reminders/run`, { method: 'POST' });
-      const result = await res.json();
-      Alert.alert('Reminders', result.sent?.length > 0 ? `Sent ${result.sent.length} reminders for today.` : 'No bills are due today.');
-    } catch (err) {
-      Alert.alert('Error', err.message);
-    }
-  };
-
-  return (
-    <View style={styles.flex1}>
-      <TouchableOpacity style={styles.fab} onPress={() => setShowModal(true)}>
-        <Ionicons name="add" size={32} color="#fff" />
-      </TouchableOpacity>
-
-      <Modal visible={showModal} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Track Bill</Text>
-              <TouchableOpacity onPress={() => setShowModal(false)} style={styles.closeIcon}>
-                <Ionicons name="close" size={24} color={THEME.text} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
-              <Text style={styles.label}>Bill Name</Text>
-              <TextInput style={styles.input} placeholder="e.g. Netflix, Electricity" value={name} onChangeText={setName} />
-
-              <Text style={styles.label}>Monthly Amount</Text>
-              <TextInput style={styles.input} placeholder="0.00" value={amount} onChangeText={setAmount} keyboardType="numeric" />
-
-              <Text style={styles.label}>Due Day of Month</Text>
-              <TextInput style={styles.input} placeholder="1-31" value={dueDay} onChangeText={setDueDay} keyboardType="numeric" maxLength={2} />
-
-              <Text style={styles.label}>Notification Email</Text>
-              <TextInput style={styles.input} placeholder="email@example.com" value={email} onChangeText={setEmail} keyboardType="email-address" />
-
-              <Text style={styles.label}>Notes</Text>
-              <TextInput style={[styles.input, { height: 80, textAlignVertical: 'top' }]} placeholder="Add details..." value={notes} onChangeText={setNotes} multiline />
-
-              <TouchableOpacity style={styles.primaryButtonLarge} onPress={addBill} disabled={submitting}>
-                {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonTextLarge}>Start Tracking</Text>}
-              </TouchableOpacity>
-              <View style={{ height: 40 }} />
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      <View style={styles.actionsHeader}>
-        <TouchableOpacity style={styles.outlineButton} onPress={runReminders}>
-          <Ionicons name="notifications-outline" size={18} color={THEME.primary} style={{ marginRight: 6 }} />
-          <Text style={styles.outlineButtonText}>Run Reminder Check</Text>
-        </TouchableOpacity>
-      </View>
-
-      <FlatList
-        data={data.bills || []}
-        keyExtractor={(item) => item._id || Math.random().toString()}
-        contentContainerStyle={{ padding: 16 }}
-        refreshing={loading}
-        onRefresh={refresh}
-        renderItem={({ item }) => (
-          <View style={styles.cardItem}>
-            <View style={[styles.iconCircle, { backgroundColor: THEME.warning + '10' }]}>
-              <Ionicons name="calendar-outline" size={20} color={THEME.warning} />
-            </View>
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={styles.itemName}>{item.name}</Text>
-              <Text style={styles.itemMeta}>
-                Due on day {item.dueDay} | {item.notifyEmail}
-              </Text>
-            </View>
-            <View style={{ alignItems: 'flex-end' }}>
-              <Text style={styles.itemPrice}>{currency(item.amount)}</Text>
-              <TouchableOpacity onPress={() => deleteBill(item._id)} style={{ marginTop: 4 }}>
-                <Ionicons name="trash-outline" size={16} color={THEME.textSecondary} />
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-        ListEmptyComponent={<EmptyState icon="document-text-outline" message="No bills tracked yet." />}
-      />
-    </View>
-  );
-}
-
-function Balances({ data, refresh, loading }) {
-  const balances = data.summary?.balances || [];
-  const settlements = data.summary?.settlements || [];
-
-  return (
-    <ScrollView
-      style={styles.scrollView}
-      showsVerticalScrollIndicator={false}
-      refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} />}
-    >
-      <View style={styles.summaryCard}>
-        <Text style={styles.summaryLabel}>Total Settled Status</Text>
-        <Text style={styles.summaryMain}>{settlements.length === 0 ? "All clear" : "Pending settlements"}</Text>
-      </View>
-
-      <Text style={styles.sectionTitle}>Individual Balances</Text>
-      <View style={styles.card}>
-        {balances.length > 0 ? balances.map((item, index) => (
-          <View key={item.userId || index} style={[styles.balanceItem, index === balances.length - 1 && { borderBottomWidth: 0 }]}>
-            <View style={styles.avatarSmall}>
-              <Text style={styles.avatarTextSmall}>{item.name?.charAt(0).toUpperCase()}</Text>
-            </View>
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={styles.itemName}>{item.name}</Text>
-              <Text style={[styles.itemMeta, { color: (item.balance || 0) >= 0 ? THEME.success : THEME.error }]}>
-                {(item.balance || 0) >= 0 ? 'To receive' : 'To pay'}
-              </Text>
-            </View>
-            <Text style={[styles.balanceValue, { color: (item.balance || 0) >= 0 ? THEME.success : THEME.error }]}>
-              {currency(Math.abs(item.balance || 0))}
-            </Text>
-          </View>
-        )) : <EmptyState icon="scale-outline" message="No balances yet." />}
-      </View>
-
-      <Text style={styles.sectionTitle}>Suggested Settlements</Text>
-      <View style={styles.card}>
-        {settlements.length > 0 ? (
-          settlements.map((s, i) => (
-            <View key={i} style={[styles.recentItem, i === settlements.length - 1 && { borderBottomWidth: 0 }]}>
-              <View style={[styles.iconCircle, { backgroundColor: THEME.accent + '10' }]}>
-                <Ionicons name="swap-horizontal" size={20} color={THEME.accent} />
-              </View>
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={styles.settlementText}>
-                  <Text style={styles.boldText}>{s.from}</Text> to <Text style={styles.boldText}>{s.to}</Text>
-                </Text>
-              </View>
-              <Text style={styles.recentItemAmount}>{currency(s.amount)}</Text>
-            </View>
-          ))
-        ) : (
-          <EmptyState icon="checkmark-circle-outline" message="Everything is settled." />
-        )}
-      </View>
-      <View style={{ height: 40 }} />
-    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: THEME.background },
   flex1: { flex: 1 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
-  header: {
-    height: 60,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    backgroundColor: THEME.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: THEME.border
-  },
-  headerTitle: { fontSize: 22, fontWeight: '800', color: THEME.primary, letterSpacing: 0 },
-  headerRight: { flexDirection: 'row', alignItems: 'center' },
-  headerUser: { fontSize: 14, color: THEME.textSecondary, fontWeight: '700', marginRight: 12 },
-  logoutIcon: { padding: 8, borderRadius: 8, backgroundColor: THEME.error + '10' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32, backgroundColor: THEME.background },
   content: { flex: 1 },
-  scrollView: { flex: 1, padding: 20 },
-  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-
-  errorTitle: { fontSize: 22, fontWeight: '800', color: THEME.text, marginTop: 24 },
-  errorSubtitle: { fontSize: 14, color: THEME.textSecondary, textAlign: 'center', marginTop: 8, marginBottom: 32 },
-
-  // Auth Styles
-  authContainer: { flex: 1, backgroundColor: THEME.background, justifyContent: 'center', padding: 20 },
-  authCard: { backgroundColor: THEME.surface, borderRadius: 8, padding: 28, elevation: 4, shadowColor: THEME.shadow, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 1, shadowRadius: 16, borderWidth: 1, borderColor: THEME.border },
-  logoCircle: { width: 80, height: 80, borderRadius: 40, backgroundColor: THEME.primary + '10', alignItems: 'center', justifyContent: 'center', alignSelf: 'center', marginBottom: 24 },
-  authTitle: { fontSize: 28, fontWeight: '800', color: THEME.text, textAlign: 'center', marginBottom: 8 },
-  authSubtitle: { fontSize: 15, color: THEME.textSecondary, textAlign: 'center', marginBottom: 32 },
-  inputGroup: { marginBottom: 20 },
-  switchButton: { marginTop: 24, alignItems: 'center' },
-  switchText: { fontSize: 14, color: THEME.textSecondary },
-  switchHighlight: { color: THEME.primary, fontWeight: '700' },
-  logoutBtn: { padding: 8, borderRadius: 8, backgroundColor: THEME.error + '10' },
-
-  tabBar: {
-    flexDirection: 'row',
-    backgroundColor: THEME.surface,
-    paddingBottom: Platform.OS === 'ios' ? 25 : 10,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: THEME.border,
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10
-  },
-  tabItem: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  tabLabel: { fontSize: 11, color: THEME.textSecondary, marginTop: 4, fontWeight: '500' },
-  tabLabelActive: { color: THEME.primary, fontWeight: '700' },
-
-  errorBanner: { flexDirection: 'row', backgroundColor: '#fff', padding: 12, margin: 16, borderRadius: 8, alignItems: 'center', borderLeftWidth: 4, borderLeftColor: THEME.error, elevation: 2 },
-  errorText: { color: THEME.error, fontSize: 13, marginLeft: 8, fontWeight: '500' },
-
-  heroSection: {
-    marginBottom: 20,
-    backgroundColor: THEME.surface,
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: THEME.border,
-    elevation: 3,
-    shadowColor: THEME.shadow,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16
-  },
-  greeting: { fontSize: 28, fontWeight: '900', color: THEME.text, letterSpacing: 0, marginBottom: 8 },
-  subGreeting: { fontSize: 14, color: THEME.textSecondary, marginTop: 0, lineHeight: 21, maxWidth: '90%' },
-
-  metricsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 24 },
-  metricCard: {
-    width: '48%',
-    backgroundColor: THEME.surface,
-    padding: 16,
-    borderRadius: 8,
-    marginBottom: 16,
-    elevation: 2,
-    shadowColor: THEME.shadow,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 1,
-    shadowRadius: 12
-  },
-  metricIconBox: { width: 40, height: 40, borderRadius: 8, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  metricTitle: { fontSize: 12, color: THEME.textSecondary, fontWeight: '600' },
-  metricValue: { fontSize: 22, fontWeight: '800', color: THEME.text, marginBottom: 2 },
-
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  sectionTitle: { fontSize: 20, fontWeight: '700', color: THEME.text, letterSpacing: 0 },
-  sectionTitleSmall: { fontSize: 16, fontWeight: '700', color: THEME.text, marginBottom: 12 },
-
-  card: { backgroundColor: THEME.surface, borderRadius: 8, padding: 8, elevation: 2, shadowColor: THEME.shadow, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 1, shadowRadius: 12, borderWidth: 1, borderColor: THEME.border },
-  recentItem: { flexDirection: 'row', alignItems: 'center', padding: 12, borderBottomWidth: 1, borderBottomColor: THEME.border },
-  iconCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: THEME.background, alignItems: 'center', justifyContent: 'center' },
-  recentItemName: { fontSize: 15, fontWeight: '600', color: THEME.text },
-  recentItemMeta: { fontSize: 12, color: THEME.textSecondary, marginTop: 2 },
-  recentItemAmount: { fontSize: 16, fontWeight: '700', color: THEME.text },
-
-  cardItem: { flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: THEME.surface, borderRadius: 8, marginBottom: 12, elevation: 2, shadowColor: THEME.shadow, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 1, shadowRadius: 8, borderWidth: 1, borderColor: THEME.border },
-  itemName: { fontSize: 16, fontWeight: '700', color: THEME.text },
-  itemMeta: { fontSize: 13, color: THEME.textSecondary, marginTop: 2 },
-  itemPrice: { fontSize: 16, fontWeight: '800', color: THEME.text },
-
-  formContainer: { padding: 20, backgroundColor: THEME.surface, borderBottomLeftRadius: 8, borderBottomRightRadius: 8, elevation: 4, shadowColor: THEME.shadow, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 1, shadowRadius: 12, borderBottomWidth: 1, borderColor: THEME.border },
-  row: { flexDirection: 'row', marginBottom: 12 },
-  input: { backgroundColor: THEME.surface, borderRadius: 8, padding: 14, fontSize: 15, color: THEME.text, borderWidth: 1, borderColor: THEME.border },
-  label: { fontSize: 14, fontWeight: '700', color: THEME.text, marginTop: 16, marginBottom: 8, marginLeft: 4 },
-
-  primaryButton: { backgroundColor: THEME.primary, padding: 14, borderRadius: 8, alignItems: 'center', elevation: 3 },
-  primaryButtonLarge: { backgroundColor: THEME.primary, padding: 18, borderRadius: 8, alignItems: 'center', marginTop: 24, elevation: 4 },
-  buttonText: { color: '#fff', fontWeight: '700', fontSize: 15 },
-  buttonTextLarge: { color: '#fff', fontWeight: '800', fontSize: 17 },
-
-  outlineButton: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, borderWidth: 1, borderColor: THEME.primary, backgroundColor: THEME.surface },
-  outlineButtonText: { color: THEME.primary, fontWeight: '600', fontSize: 14 },
-  actionsHeader: { paddingHorizontal: 20, marginTop: 8 },
-
-  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: THEME.primary, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-  avatarSmall: { width: 36, height: 36, borderRadius: 18, backgroundColor: THEME.accent, alignItems: 'center', justifyContent: 'center' },
-  avatarTextSmall: { color: '#fff', fontSize: 14, fontWeight: 'bold' },
-  deleteBtn: { padding: 8 },
-
-  fab: { position: 'absolute', bottom: 20, right: 20, width: 64, height: 64, borderRadius: 32, backgroundColor: THEME.primary, alignItems: 'center', justifyContent: 'center', elevation: 6, shadowColor: THEME.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, zIndex: 99 },
-
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalSheet: { backgroundColor: THEME.surface, borderTopLeftRadius: 12, borderTopRightRadius: 12, height: '85%', padding: 24 },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  modalTitle: { fontSize: 24, fontWeight: '800', color: THEME.text },
-  closeIcon: { padding: 4 },
-  modalScroll: { flex: 1 },
-
-  pillScroll: { flexDirection: 'row', marginBottom: 8 },
-  pill: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: THEME.border, marginRight: 8, backgroundColor: THEME.surface },
+  authContainer: { flex: 1, justifyContent: 'center', padding: 18, backgroundColor: THEME.secondary },
+  authPanel: { backgroundColor: THEME.surface, borderRadius: 8, padding: 24, borderWidth: 1, borderColor: '#ffffff33', shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 24, elevation: 8 },
+  brandMark: { width: 70, height: 70, borderRadius: 35, backgroundColor: THEME.secondary, alignItems: 'center', justifyContent: 'center', alignSelf: 'center', marginBottom: 18 },
+  authTitle: { fontSize: 30, fontWeight: '900', color: THEME.ink, textAlign: 'center', letterSpacing: 0 },
+  authSubtitle: { fontSize: 14, lineHeight: 21, color: THEME.muted, textAlign: 'center', marginTop: 8, marginBottom: 20 },
+  header: { minHeight: 76, paddingHorizontal: 18, paddingVertical: 12, backgroundColor: THEME.secondary, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  headerTitle: { fontSize: 22, fontWeight: '900', color: '#fff', letterSpacing: 0 },
+  headerSub: { fontSize: 12, color: '#c9d7d2', marginTop: 2, fontWeight: '600' },
+  headerRight: { flexDirection: 'row', alignItems: 'center' },
+  rolePill: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: '#ffffff17', marginRight: 8 },
+  rolePillText: { color: '#fff', fontWeight: '800', fontSize: 12 },
+  logoutIcon: { width: 38, height: 38, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: '#ffffff17' },
+  scrollView: { flex: 1, padding: 16 },
+  tabBar: { flexDirection: 'row', backgroundColor: THEME.secondary, paddingTop: 9, paddingBottom: Platform.OS === 'ios' ? 24 : 10, borderTopWidth: 1, borderTopColor: '#ffffff18' },
+  tabItem: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 48 },
+  tabLabel: { color: '#d7dfdc', fontSize: 10, fontWeight: '700', marginTop: 4 },
+  tabLabelActive: { color: THEME.accent },
+  heroSection: { backgroundColor: THEME.secondary, borderRadius: 8, padding: 20, marginBottom: 18, overflow: 'hidden' },
+  heroTop: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
+  heroIcon: { width: 44, height: 44, borderRadius: 8, backgroundColor: '#ffffff14', alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  heroEyebrow: { color: THEME.accent, fontSize: 12, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0 },
+  greeting: { color: '#fff', fontSize: 27, lineHeight: 33, fontWeight: '900', letterSpacing: 0 },
+  subGreeting: { color: '#dce8e4', fontSize: 14, lineHeight: 21, marginTop: 8 },
+  metricsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 10 },
+  metricCard: { width: '48%', backgroundColor: THEME.surface, borderRadius: 8, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: THEME.border, shadowColor: THEME.shadow, shadowOpacity: 1, shadowRadius: 10, elevation: 2 },
+  metricIconBox: { width: 38, height: 38, borderRadius: 8, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
+  metricValue: { fontSize: 20, fontWeight: '900', color: THEME.ink, letterSpacing: 0 },
+  metricTitle: { fontSize: 12, color: THEME.muted, fontWeight: '800', marginTop: 3 },
+  section: { marginBottom: 16 },
+  sectionTitle: { fontSize: 19, fontWeight: '900', color: THEME.ink, marginBottom: 10, letterSpacing: 0 },
+  sectionTitleSmall: { fontSize: 17, fontWeight: '900', color: THEME.ink, marginBottom: 8 },
+  card: { backgroundColor: THEME.surface, borderRadius: 8, padding: 12, borderWidth: 1, borderColor: THEME.border, shadowColor: THEME.shadow, shadowOpacity: 1, shadowRadius: 10, elevation: 2 },
+  formContainer: { backgroundColor: THEME.surface, padding: 16, borderBottomWidth: 1, borderBottomColor: THEME.border },
+  listContent: { padding: 16, paddingBottom: 94 },
+  label: { fontSize: 13, color: THEME.ink, fontWeight: '800', marginTop: 10, marginBottom: 7 },
+  input: { backgroundColor: '#fbfaf7', borderWidth: 1, borderColor: THEME.border, borderRadius: 8, paddingHorizontal: 13, paddingVertical: 12, fontSize: 15, color: THEME.ink },
+  textArea: { minHeight: 92, textAlignVertical: 'top', marginBottom: 12 },
+  compactInputWrap: { flex: 1 },
+  twoColumn: { flexDirection: 'row', gap: 10 },
+  passwordBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fbfaf7', borderWidth: 1, borderColor: THEME.border, borderRadius: 8 },
+  passwordInput: { flex: 1, paddingHorizontal: 13, paddingVertical: 12, fontSize: 15, color: THEME.ink },
+  iconButton: { padding: 10 },
+  primaryButton: { backgroundColor: THEME.primary, borderRadius: 8, paddingVertical: 13, alignItems: 'center', justifyContent: 'center', marginTop: 14 },
+  primaryButtonLarge: { backgroundColor: THEME.primary, borderRadius: 8, paddingVertical: 16, alignItems: 'center', justifyContent: 'center', marginTop: 20 },
+  buttonText: { color: '#fff', fontWeight: '900', fontSize: 14 },
+  buttonTextLarge: { color: '#fff', fontWeight: '900', fontSize: 16 },
+  segment: { flexDirection: 'row', backgroundColor: THEME.soft, borderRadius: 8, padding: 4, marginBottom: 12 },
+  segmentButton: { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
+  segmentActive: { backgroundColor: THEME.surface },
+  segmentText: { fontSize: 13, fontWeight: '800', color: THEME.muted },
+  segmentTextActive: { color: THEME.primary },
+  demoRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
+  demoButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1, borderColor: THEME.border, borderRadius: 8, paddingVertical: 10 },
+  demoText: { color: THEME.primary, fontWeight: '800', fontSize: 12 },
+  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  itemBody: { flex: 1, marginLeft: 12 },
+  cardItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: THEME.surface, borderRadius: 8, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: THEME.border },
+  iconCircle: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
+  itemName: { fontSize: 15, color: THEME.ink, fontWeight: '900' },
+  itemMeta: { fontSize: 12, color: THEME.muted, marginTop: 3, lineHeight: 17 },
+  itemPrice: { fontSize: 15, color: THEME.ink, fontWeight: '900', marginLeft: 8 },
+  statusBadge: { borderRadius: 8, paddingHorizontal: 9, paddingVertical: 5, backgroundColor: THEME.soft },
+  statusText: { fontSize: 11, color: THEME.primary, fontWeight: '900', textTransform: 'capitalize' },
+  menuCard: { padding: 12, borderRadius: 8, backgroundColor: '#fbfaf7', borderWidth: 1, borderColor: THEME.border, marginBottom: 10 },
+  mealLine: { flexDirection: 'row', alignItems: 'center', marginTop: 11 },
+  mealLabel: { width: 76, marginLeft: 8, fontSize: 12, fontWeight: '900', color: THEME.primary },
+  mealValue: { flex: 1, fontSize: 13, color: THEME.ink, lineHeight: 18 },
+  noticeText: { marginTop: 12, padding: 10, borderRadius: 8, backgroundColor: `${THEME.accent}14`, color: THEME.warning, fontWeight: '700', fontSize: 12 },
+  qrCard: { alignItems: 'center', padding: 18, borderWidth: 1, borderStyle: 'dashed', borderColor: THEME.border, borderRadius: 8, backgroundColor: '#fbfaf7' },
+  qrTitle: { fontSize: 18, fontWeight: '900', color: THEME.ink, marginTop: 8 },
+  qrSub: { color: THEME.muted, marginTop: 4, fontSize: 12 },
+  actionRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  smallAction: { flex: 1, borderRadius: 8, paddingVertical: 11, alignItems: 'center', backgroundColor: THEME.primary },
+  smallActionText: { color: '#fff', fontWeight: '900', textTransform: 'capitalize', fontSize: 12 },
+  ratingRow: { flexDirection: 'row', gap: 4, marginBottom: 10 },
+  commentItem: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: THEME.border },
+  commentText: { marginTop: 6, color: THEME.ink, lineHeight: 19 },
+  dueCard: { padding: 12, borderRadius: 8, borderWidth: 1, borderColor: THEME.border, marginBottom: 10, backgroundColor: '#fbfaf7' },
+  dueStatus: { fontWeight: '900', textTransform: 'capitalize', fontSize: 12 },
+  progressTrack: { height: 8, borderRadius: 8, backgroundColor: THEME.soft, overflow: 'hidden', marginTop: 12, marginBottom: 7 },
+  progressFill: { height: 8, borderRadius: 8 },
+  pillScroll: { marginBottom: 6 },
+  pill: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 8, borderWidth: 1, borderColor: THEME.border, backgroundColor: '#fbfaf7', marginRight: 8 },
   pillActive: { backgroundColor: THEME.primary, borderColor: THEME.primary },
-  pillText: { fontSize: 14, color: THEME.textSecondary, fontWeight: '600' },
+  pillText: { color: THEME.muted, fontWeight: '800', fontSize: 13 },
   pillTextActive: { color: '#fff' },
-
-  checkboxGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  checkbox: { flexDirection: 'row', alignItems: 'center', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: THEME.border, minWidth: '30%' },
-  checkboxActive: { borderColor: THEME.primary, backgroundColor: THEME.primary + '08' },
-  checkboxLabel: { fontSize: 14, color: THEME.textSecondary, marginLeft: 8, fontWeight: '500' },
-  checkboxLabelActive: { color: THEME.primary, fontWeight: '700' },
-
-  summaryCard: { backgroundColor: THEME.secondary, borderRadius: 8, padding: 24, marginBottom: 24, elevation: 4, shadowColor: THEME.shadow, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 1, shadowRadius: 12 },
-  summaryLabel: { color: '#fff', opacity: 0.8, fontSize: 14, fontWeight: '600' },
-  summaryMain: { color: '#fff', fontSize: 24, fontWeight: '800', marginTop: 4 },
-
-  balanceItem: { flexDirection: 'row', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: THEME.border },
-  balanceValue: { fontSize: 18, fontWeight: '800' },
-  settlementText: { fontSize: 15, color: THEME.text, lineHeight: 22 },
-  boldText: { fontWeight: '700' },
-
-  emptyContainer: { padding: 40, alignItems: 'center', justifyContent: 'center' },
-  emptyText: { color: THEME.textSecondary, marginTop: 12, fontSize: 14, fontWeight: '500' },
-  rememberMeContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 20, marginLeft: 4 },
-  rememberMeText: { fontSize: 14, color: THEME.text, marginLeft: 8, fontWeight: '500' },
-  linkButton: { alignSelf: 'flex-start', marginTop: 14 },
-  linkText: { color: THEME.primary, fontWeight: '700' },
-  successMessage: { color: THEME.success, fontSize: 14, marginBottom: 12, textAlign: 'center' },
-  passwordContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: THEME.surface, borderRadius: 8, borderWidth: 1, borderColor: THEME.border },
-  passwordInput: { flex: 1, padding: 14, fontSize: 15, color: THEME.text },
-  eyeIcon: { paddingHorizontal: 12 }
+  checkboxGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 2 },
+  checkbox: { flexDirection: 'row', alignItems: 'center', padding: 10, minWidth: '45%', borderRadius: 8, borderWidth: 1, borderColor: THEME.border, backgroundColor: '#fbfaf7' },
+  checkboxActive: { borderColor: THEME.primary, backgroundColor: `${THEME.primary}10` },
+  checkboxLabel: { marginLeft: 7, color: THEME.muted, fontWeight: '800', fontSize: 12 },
+  checkboxLabelActive: { color: THEME.primary },
+  fab: { position: 'absolute', right: 18, bottom: 84, zIndex: 5, width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center', backgroundColor: THEME.accent, shadowColor: THEME.shadow, shadowOpacity: 1, shadowRadius: 12, elevation: 6 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(16, 41, 39, 0.55)', justifyContent: 'flex-end' },
+  modalSheet: { backgroundColor: THEME.surface, borderTopLeftRadius: 8, borderTopRightRadius: 8, padding: 20, maxHeight: '88%' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  modalTitle: { fontSize: 23, color: THEME.ink, fontWeight: '900' },
+  settlementItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: THEME.border },
+  remindButton: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: THEME.primary, marginLeft: 8 },
+  balanceItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: THEME.border },
+  balanceValue: { fontWeight: '900', fontSize: 15 },
+  returnButton: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, backgroundColor: THEME.success },
+  returnText: { color: '#fff', fontWeight: '900', fontSize: 12 },
+  chatList: { padding: 16, paddingBottom: 12 },
+  composer: { backgroundColor: THEME.surface, borderTopWidth: 1, borderTopColor: THEME.border, padding: 12 },
+  tagScroll: { marginBottom: 8 },
+  tagPill: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, backgroundColor: THEME.soft, marginRight: 7 },
+  tagPillActive: { backgroundColor: THEME.primary },
+  tagText: { color: THEME.muted, fontWeight: '900', fontSize: 12 },
+  tagTextActive: { color: '#fff' },
+  composerRow: { flexDirection: 'row', alignItems: 'center' },
+  composerInput: { flex: 1, borderWidth: 1, borderColor: THEME.border, borderRadius: 8, paddingHorizontal: 13, paddingVertical: 11, color: THEME.ink, backgroundColor: '#fbfaf7' },
+  sendButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: THEME.primary, marginLeft: 8 },
+  messageBubble: { backgroundColor: THEME.surface, borderRadius: 8, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: THEME.border },
+  messageCompact: { backgroundColor: '#fbfaf7' },
+  messageName: { fontWeight: '900', color: THEME.ink, fontSize: 13 },
+  messageTag: { color: THEME.accent, fontWeight: '900', fontSize: 11, textTransform: 'uppercase' },
+  messageText: { color: THEME.ink, fontSize: 14, lineHeight: 20, marginTop: 6 },
+  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: THEME.primary, alignItems: 'center', justifyContent: 'center' },
+  avatarSmall: { width: 34, height: 34, borderRadius: 17, backgroundColor: THEME.primary, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { color: '#fff', fontWeight: '900', fontSize: 17 },
+  avatarTextSmall: { color: '#fff', fontWeight: '900', fontSize: 13 },
+  insightRow: { flexDirection: 'row', gap: 10 },
+  insight: { flex: 1, padding: 12, borderRadius: 8, backgroundColor: '#fbfaf7', borderWidth: 1, borderColor: THEME.border },
+  emptyContainer: { padding: 28, alignItems: 'center', justifyContent: 'center' },
+  emptyText: { color: THEME.muted, fontWeight: '700', fontSize: 13, marginTop: 10, textAlign: 'center' },
+  errorBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff4f2', paddingHorizontal: 14, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: '#f1c5bf' },
+  errorText: { color: THEME.error, fontWeight: '700', fontSize: 12, marginLeft: 7, flex: 1 },
+  errorTitle: { color: THEME.ink, fontSize: 22, fontWeight: '900', marginTop: 16 },
+  errorSubtitle: { color: THEME.muted, fontSize: 14, textAlign: 'center', marginTop: 8, marginBottom: 22 }
 });
