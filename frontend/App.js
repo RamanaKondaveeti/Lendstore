@@ -165,6 +165,9 @@ function AuthScreen({ role, onBack }) {
         </View>
         <Text style={styles.authTitle}>Sign in as {role === 'admin' ? 'Admin' : 'User'}</Text>
         <Text style={styles.authSubtitle}>Enter your email and password to access the dashboard.</Text>
+        {role === 'admin' ? (
+          <Text style={styles.loginHint}>Seeded admin credentials: admin@hostel.local / Hostel@123</Text>
+        ) : null}
 
         <LabeledInput label="Email" value={email} onChangeText={setEmail} placeholder="you@hostel.local" keyboardType="email-address" autoCapitalize="none" />
         <LabeledInput label="Password" value={password} onChangeText={setPassword} placeholder="Password" secureTextEntry />
@@ -1156,6 +1159,7 @@ const styles = StyleSheet.create({
   brandMark: { width: 70, height: 70, borderRadius: 35, backgroundColor: THEME.secondary, alignItems: 'center', justifyContent: 'center', alignSelf: 'center', marginBottom: 18 },
   authTitle: { fontSize: 30, fontWeight: '900', color: THEME.ink, textAlign: 'center', letterSpacing: 0 },
   authSubtitle: { fontSize: 14, lineHeight: 21, color: THEME.muted, textAlign: 'center', marginTop: 8, marginBottom: 20 },
+  loginHint: { fontSize: 13, color: THEME.muted, textAlign: 'center', marginBottom: 16, lineHeight: 18 },
   header: { minHeight: 76, paddingHorizontal: 18, paddingVertical: 12, backgroundColor: THEME.secondary, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   headerTitle: { fontSize: 22, fontWeight: '900', color: '#fff', letterSpacing: 0 },
   headerSub: { fontSize: 12, color: '#c9d7d2', marginTop: 2, fontWeight: '600' },
