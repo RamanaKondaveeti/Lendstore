@@ -596,8 +596,8 @@ function Dashboard({ data, refresh, loading, user, logout }) {
     >
       <View style={styles.heroSection}>
         <View>
-          <Text style={styles.greeting}>Hello, {user?.name?.split(' ')[0] || 'User'}</Text>
-          <Text style={styles.subGreeting}>Track shared spending, bills, and balances</Text>
+          <Text style={styles.greeting}>Bills & Balances</Text>
+          <Text style={styles.subGreeting}>Your current bill status and balance summary</Text>
         </View>
       </View>
 
@@ -1161,9 +1161,21 @@ const styles = StyleSheet.create({
   errorBanner: { flexDirection: 'row', backgroundColor: '#fff', padding: 12, margin: 16, borderRadius: 8, alignItems: 'center', borderLeftWidth: 4, borderLeftColor: THEME.error, elevation: 2 },
   errorText: { color: THEME.error, fontSize: 13, marginLeft: 8, fontWeight: '500' },
 
-  heroSection: { marginBottom: 20 },
-  greeting: { fontSize: 26, fontWeight: '800', color: THEME.text, letterSpacing: 0 },
-  subGreeting: { fontSize: 15, color: THEME.textSecondary, marginTop: 4 },
+  heroSection: {
+    marginBottom: 20,
+    backgroundColor: THEME.surface,
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: THEME.border,
+    elevation: 3,
+    shadowColor: THEME.shadow,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16
+  },
+  greeting: { fontSize: 28, fontWeight: '900', color: THEME.text, letterSpacing: 0, marginBottom: 8 },
+  subGreeting: { fontSize: 14, color: THEME.textSecondary, marginTop: 0, lineHeight: 21, maxWidth: '90%' },
 
   metricsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 24 },
   metricCard: {
