@@ -106,10 +106,13 @@ function AuthScreen() {
   const { login } = useContext(AuthContext);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [roomNo, setRoomNo] = useState('');
+  const [upiId, setUpiId] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const submit = async () => {
+  const loginSubmit = async () => {
     if (!email || !password) {
       return Alert.alert('Missing details', 'Email and password are required.');
     }
@@ -130,6 +133,28 @@ function AuthScreen() {
     }
   };
 
+  const signupSubmit = async () => {
+    if (!name || !email || !password) {
+      return Alert.alert('Missing details', 'Name, email and password are required for signup.');
+    }
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, password, roomNo, upiId, messPlan: 'standard' })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Signup failed');
+      // auto-login after successful signup
+      await login(data.token, data.user);
+    } catch (error) {
+      Alert.alert('Signup failed', error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.authContainer}>
       <StatusBar barStyle="light-content" backgroundColor={THEME.secondary} />
@@ -140,6 +165,7 @@ function AuthScreen() {
         <Text style={styles.authTitle}>HostelLedger</Text>
         <Text style={styles.authSubtitle}>Login with your admin or hostler credentials to manage mess, expenses, splits, and hostel ledgers.</Text>
 
+        <LabeledInput label="Full name" value={name} onChangeText={setName} placeholder="Your full name (for signup)" />
         <LabeledInput label="Email" value={email} onChangeText={setEmail} placeholder="you@hostel.local" keyboardType="email-address" autoCapitalize="none" />
         <Text style={styles.label}>Password</Text>
         <View style={styles.passwordBox}>
@@ -156,9 +182,17 @@ function AuthScreen() {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity style={styles.primaryButtonLarge} onPress={submit} disabled={loading}>
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonTextLarge}>Login or Signup Page</Text>}
-        </TouchableOpacity>
+        <LabeledInput label="Room (optional)" value={roomNo} onChangeText={setRoomNo} placeholder="B-204" />
+        <LabeledInput label="UPI ID (optional)" value={upiId} onChangeText={setUpiId} placeholder="name@upi" />
+
+        <View style={styles.authActionsRow}>
+          <TouchableOpacity style={[styles.primaryButton, styles.authActionButton]} onPress={loginSubmit} disabled={loading}>
+            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Login</Text>}
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.primaryButton, styles.authActionButton]} onPress={signupSubmit} disabled={loading}>
+            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Signup</Text>}
+          </TouchableOpacity>
+        </View>
       </View>
     </KeyboardAvoidingView>
   );
@@ -1202,6 +1236,8 @@ const styles = StyleSheet.create({
   qrTitle: { fontSize: 18, fontWeight: '900', color: THEME.ink, marginTop: 8 },
   qrSub: { color: THEME.muted, marginTop: 4, fontSize: 12 },
   actionRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  authActionsRow: { flexDirection: 'row', gap: 10, marginTop: 16 },
+  authActionButton: { flex: 1, marginHorizontal: 4 },
   smallAction: { flex: 1, borderRadius: 8, paddingVertical: 11, alignItems: 'center', backgroundColor: THEME.primary },
   smallActionText: { color: '#fff', fontWeight: '900', textTransform: 'capitalize', fontSize: 12 },
   ratingRow: { flexDirection: 'row', gap: 4, marginBottom: 10 },
