@@ -48,7 +48,7 @@ const idOf = (item) => String(item?._id || item?.id || item?.userId || '');
 export default function App() {
   const [token, setToken] = useState(null);
   const [user, setUser] = useState(null);
-  const [demoRole, setDemoRole] = useState(null);
+  const [selectedRole, setSelectedRole] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -79,7 +79,7 @@ export default function App() {
   const logout = async () => {
     setToken(null);
     setUser(null);
-    setDemoRole(null);
+    setSelectedRole(null);
     await AsyncStorage.multiRemove(['token', 'user']);
   };
 
@@ -90,7 +90,7 @@ export default function App() {
   return (
     <AuthContext.Provider value={{ token, user, login, logout }}>
       <SafeAreaProvider>
-        {token || demoRole ? <MainScreen demoMode={!!demoRole} demoRole={demoRole} /> : <RoleSelectionScreen onSelectRole={setDemoRole} />}
+        {token ? <MainScreen /> : selectedRole ? <AuthScreen role={selectedRole} onBack={() => setSelectedRole(null)} /> : <RoleSelectionScreen onSelectRole={setSelectedRole} />}
       </SafeAreaProvider>
     </AuthContext.Provider>
   );
@@ -113,7 +113,7 @@ function RoleSelectionScreen({ onSelectRole }) {
           <MaterialCommunityIcons name="silverware-fork-knife" size={34} color={THEME.accent} />
         </View>
         <Text style={styles.authTitle}>HostelLedger</Text>
-        <Text style={styles.authSubtitle}>Pick a role to continue to the dashboard.</Text>
+        <Text style={styles.authSubtitle}>Select your role and sign in to continue.</Text>
 
         <TouchableOpacity style={styles.roleButton} onPress={() => onSelectRole('user')}>
           <Text style={styles.buttonTextLarge}>User</Text>
@@ -126,17 +126,72 @@ function RoleSelectionScreen({ onSelectRole }) {
   );
 }
 
-function MainScreen({ demoMode = false, demoRole = null }) {
+function AuthScreen({ role, onBack }) {
+  const { login } = useContext(AuthContext);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async () => {
+    if (!email || !password) {
+      return Alert.alert('Missing details', 'Email and password are required.');
+    }
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Login failed');
+      if (data.user?.role !== role) {
+        Alert.alert('Role mismatch', `Logged in as ${data.user?.role || 'user'}. Please select the correct role.`);
+      }
+      await login(data.token, data.user);
+    } catch (error) {
+      Alert.alert('Login failed', error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.authContainer}>
+      <StatusBar barStyle="light-content" backgroundColor={THEME.secondary} />
+      <View style={styles.authPanel}>
+        <View style={styles.brandMark}>
+          <MaterialCommunityIcons name="silverware-fork-knife" size={34} color={THEME.accent} />
+        </View>
+        <Text style={styles.authTitle}>Sign in as {role === 'admin' ? 'Admin' : 'User'}</Text>
+        <Text style={styles.authSubtitle}>Enter your email and password to access the dashboard.</Text>
+
+        <LabeledInput label="Email" value={email} onChangeText={setEmail} placeholder="you@hostel.local" keyboardType="email-address" autoCapitalize="none" />
+        <LabeledInput label="Password" value={password} onChangeText={setPassword} placeholder="Password" secureTextEntry />
+
+        <TouchableOpacity style={styles.primaryButton} onPress={handleLogin} disabled={loading}>
+          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Sign in</Text>}
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.smallAction, { marginTop: 12 }]} onPress={onBack}>
+          <Text style={styles.smallActionText}>Choose a different role</Text>
+        </TouchableOpacity>
+      </View>
+    </KeyboardAvoidingView>
+  );
+}
+
+function MainScreen() {
   const { token, user, logout } = useContext(AuthContext);
-  const [activeTab, setActiveTab] = useState(demoMode ? (demoRole === 'admin' ? 'admin' : 'home') : user?.role === 'admin' ? 'admin' : 'home');
-  const [loading, setLoading] = useState(demoMode ? false : true);
+  const [activeTab, setActiveTab] = useState(user?.role === 'admin' ? 'admin' : 'home');
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [data, setData] = useState(emptyData);
 
+  useEffect(() => {
+    setActiveTab(user?.role === 'admin' ? 'admin' : 'home');
+  }, [user]);
+
   const apiFetch = useCallback(async (path, options = {}) => {
-    if (demoMode) {
-      return {};
-    }
     const res = await fetch(`${API_URL}${path}`, {
       ...options,
       headers: {
@@ -148,15 +203,9 @@ function MainScreen({ demoMode = false, demoRole = null }) {
     const json = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(json.message || `Server returned ${res.status}`);
     return json;
-  }, [token, demoMode]);
+  }, [token]);
 
   const refresh = useCallback(async () => {
-    if (demoMode) {
-      setLoading(false);
-      setError(null);
-      setData(emptyData);
-      return;
-    }
     setLoading(true);
     try {
       const appData = await apiFetch('/app-data');
@@ -167,23 +216,15 @@ function MainScreen({ demoMode = false, demoRole = null }) {
     } finally {
       setLoading(false);
     }
-  }, [apiFetch, demoMode]);
+  }, [apiFetch]);
 
   useEffect(() => {
-    if (!demoMode) {
-      refresh();
-    } else {
-      setLoading(false);
-    }
-  }, [refresh, demoMode]);
+    refresh();
+  }, [refresh]);
 
-  const isAdmin = demoMode ? demoRole === 'admin' : user?.role === 'admin';
+  const isAdmin = user?.role === 'admin';
   const tabs = isAdmin ? adminTabs : userTabs;
-
-  const demoUser = demoMode
-    ? { role: demoRole, name: demoRole === 'admin' ? 'Admin' : 'User', roomNo: demoRole === 'user' ? 'B-204' : '' }
-    : null;
-  const screenProps = { data, refresh, loading, apiFetch, user: demoMode ? demoUser : user };
+  const screenProps = { data, refresh, loading, apiFetch, user };
   const renderContent = () => {
     if (error && data.residents.length === 0 && data.expenses.length === 0) {
       return (
