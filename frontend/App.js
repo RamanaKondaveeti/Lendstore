@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -36,10 +36,6 @@ const THEME = {
   border: '#ded6c7',
   shadow: 'rgba(20, 27, 25, 0.12)'
 };
-
-const ADMIN_EMAIL = 'admin@hostel.local';
-const USER_EMAIL = 'rahul@hostel.local';
-const DEMO_PASSWORD = 'Hostel@123';
 
 const AuthContext = createContext(null);
 
@@ -108,41 +104,30 @@ function CenteredLoader() {
 
 function AuthScreen() {
   const { login } = useContext(AuthContext);
-  const [mode, setMode] = useState('login');
-  const [name, setName] = useState('');
-  const [roomNo, setRoomNo] = useState('');
-  const [upiId, setUpiId] = useState('');
-  const [email, setEmail] = useState(USER_EMAIL);
-  const [password, setPassword] = useState(DEMO_PASSWORD);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const submit = async () => {
-    if (!email || !password || (mode === 'signup' && !name)) {
-      return Alert.alert('Missing details', mode === 'signup' ? 'Name, email, and password are required.' : 'Email and password are required.');
+    if (!email || !password) {
+      return Alert.alert('Missing details', 'Email and password are required.');
     }
     setLoading(true);
     try {
-      const path = mode === 'signup' ? '/auth/register' : '/auth/login';
-      const body = mode === 'signup' ? { name, email, password, roomNo, upiId, messPlan: 'standard' } : { email, password };
-      const res = await fetch(`${API_URL}${path}`, {
+      const res = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
+        body: JSON.stringify({ email, password })
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Authentication failed');
+      if (!res.ok) throw new Error(data.message || 'Login failed');
       await login(data.token, data.user);
     } catch (error) {
-      Alert.alert('Access failed', error.message);
+      Alert.alert('Login failed', error.message);
     } finally {
       setLoading(false);
     }
-  };
-
-  const fillDemo = (type) => {
-    setEmail(type === 'admin' ? ADMIN_EMAIL : USER_EMAIL);
-    setPassword(DEMO_PASSWORD);
   };
 
   return (
@@ -153,26 +138,7 @@ function AuthScreen() {
           <MaterialCommunityIcons name="silverware-fork-knife" size={34} color={THEME.accent} />
         </View>
         <Text style={styles.authTitle}>HostelLedger</Text>
-        <Text style={styles.authSubtitle}>Mess bills, roommate splits, borrow returns, UPI reminders, and hostel ledgers in one polished app.</Text>
-
-        <View style={styles.segment}>
-          <TouchableOpacity style={[styles.segmentButton, mode === 'login' && styles.segmentActive]} onPress={() => setMode('login')}>
-            <Text style={[styles.segmentText, mode === 'login' && styles.segmentTextActive]}>Sign in</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.segmentButton, mode === 'signup' && styles.segmentActive]} onPress={() => setMode('signup')}>
-            <Text style={[styles.segmentText, mode === 'signup' && styles.segmentTextActive]}>Join hostel</Text>
-          </TouchableOpacity>
-        </View>
-
-        {mode === 'signup' ? (
-          <>
-            <LabeledInput label="Full name" value={name} onChangeText={setName} placeholder="Rahul Sharma" />
-            <View style={styles.twoColumn}>
-              <LabeledInput label="Room" value={roomNo} onChangeText={setRoomNo} placeholder="B-204" compact />
-              <LabeledInput label="UPI ID" value={upiId} onChangeText={setUpiId} placeholder="name@upi" compact />
-            </View>
-          </>
-        ) : null}
+        <Text style={styles.authSubtitle}>Login with your admin or hostler credentials to manage mess, expenses, splits, and hostel ledgers.</Text>
 
         <LabeledInput label="Email" value={email} onChangeText={setEmail} placeholder="you@hostel.local" keyboardType="email-address" autoCapitalize="none" />
         <Text style={styles.label}>Password</Text>
@@ -190,21 +156,8 @@ function AuthScreen() {
           </TouchableOpacity>
         </View>
 
-        {mode === 'login' ? (
-          <View style={styles.demoRow}>
-            <TouchableOpacity style={styles.demoButton} onPress={() => fillDemo('admin')}>
-              <Ionicons name="business-outline" size={16} color={THEME.primary} />
-              <Text style={styles.demoText}>Admin demo</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.demoButton} onPress={() => fillDemo('user')}>
-              <Ionicons name="bed-outline" size={16} color={THEME.primary} />
-              <Text style={styles.demoText}>Hostler demo</Text>
-            </TouchableOpacity>
-          </View>
-        ) : null}
-
         <TouchableOpacity style={styles.primaryButtonLarge} onPress={submit} disabled={loading}>
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonTextLarge}>{mode === 'signup' ? 'Create hostler account' : 'Enter dashboard'}</Text>}
+          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonTextLarge}>Login or Signup Page</Text>}
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
@@ -1230,9 +1183,7 @@ const styles = StyleSheet.create({
   segmentActive: { backgroundColor: THEME.surface },
   segmentText: { fontSize: 13, fontWeight: '800', color: THEME.muted },
   segmentTextActive: { color: THEME.primary },
-  demoRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
-  demoButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1, borderColor: THEME.border, borderRadius: 8, paddingVertical: 10 },
-  demoText: { color: THEME.primary, fontWeight: '800', fontSize: 12 },
+  /* demo UI removed: Admin/Hostler demo buttons */
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   itemBody: { flex: 1, marginLeft: 12 },
   cardItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: THEME.surface, borderRadius: 8, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: THEME.border },
