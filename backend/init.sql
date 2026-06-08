@@ -1,0 +1,65 @@
+CREATE DATABASE IF NOT EXISTS lendstore;
+USE lendstore;
+
+CREATE TABLE IF NOT EXISTS auth_users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(120) NOT NULL,
+  email VARCHAR(180) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS login_events (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  auth_user_id INT NULL,
+  email VARCHAR(180) NULL,
+  event_type ENUM('register', 'login') NOT NULL,
+  success BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_login_events_auth_user
+    FOREIGN KEY (auth_user_id) REFERENCES auth_users(id)
+    ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS expense_users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(120) NOT NULL,
+  email VARCHAR(180) NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS expenses (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  description VARCHAR(255) NOT NULL,
+  amount DECIMAL(12, 2) NOT NULL,
+  paid_by_user_id INT NOT NULL,
+  expense_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_expenses_paid_by
+    FOREIGN KEY (paid_by_user_id) REFERENCES expense_users(id)
+    ON DELETE RESTRICT
+);
+
+CREATE TABLE IF NOT EXISTS expense_participants (
+  expense_id INT NOT NULL,
+  user_id INT NOT NULL,
+  PRIMARY KEY (expense_id, user_id),
+  CONSTRAINT fk_expense_participants_expense
+    FOREIGN KEY (expense_id) REFERENCES expenses(id)
+    ON DELETE CASCADE,
+  CONSTRAINT fk_expense_participants_user
+    FOREIGN KEY (user_id) REFERENCES expense_users(id)
+    ON DELETE RESTRICT
+);
+
+CREATE TABLE IF NOT EXISTS bills (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(160) NOT NULL,
+  amount DECIMAL(12, 2) NOT NULL,
+  due_day TINYINT NOT NULL,
+  notify_email VARCHAR(180) NOT NULL,
+  notes TEXT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT chk_bills_due_day CHECK (due_day BETWEEN 1 AND 31)
+);
