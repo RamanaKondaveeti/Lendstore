@@ -138,7 +138,7 @@ function LoginScreen({ onSwitch }) {
     if (!email || !password) return Alert.alert('Error', 'Please fill all fields');
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/auth/login`, {
+      const res = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
@@ -237,7 +237,7 @@ function SignupScreen({ onSwitch }) {
     if (!name || !email || !password) return Alert.alert('Error', 'Please fill all fields');
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/auth/register`, {
+      const res = await fetch(`${API_URL}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, password })
@@ -330,10 +330,10 @@ function MainScreen() {
       };
 
       const [users, expenses, bills, summary] = await Promise.all([
-        fetchJson(`${API_URL}/api/users`),
-        fetchJson(`${API_URL}/api/expenses`),
-        fetchJson(`${API_URL}/api/bills`),
-        fetchJson(`${API_URL}/api/summary`)
+        fetchJson(`${API_URL}/users`),
+        fetchJson(`${API_URL}/expenses`),
+        fetchJson(`${API_URL}/bills`),
+        fetchJson(`${API_URL}/summary`)
       ]);
 
       setData({
@@ -520,7 +520,7 @@ function Users({ data, refresh, loading }) {
     if (!name) return Alert.alert('Error', 'Name is required');
     setSubmitting(true);
     try {
-      const res = await fetch(`${API_URL}/api/users`, {
+      const res = await fetch(`${API_URL}/users`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email })
@@ -541,7 +541,7 @@ function Users({ data, refresh, loading }) {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
         try {
-          const res = await fetch(`${API_URL}/api/users/${id}`, { method: 'DELETE' });
+          const res = await fetch(`${API_URL}/users/${id}`, { method: 'DELETE' });
           if (!res.ok) {
             const errData = await res.json();
             throw new Error(errData.message || 'Failed to delete');
@@ -627,7 +627,7 @@ function Expenses({ data, refresh, loading }) {
     }
     setSubmitting(true);
     try {
-      const res = await fetch(`${API_URL}/api/expenses`, {
+      const res = await fetch(`${API_URL}/expenses`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ description, amount, paidBy, participants, date: new Date().toISOString() })
@@ -649,7 +649,7 @@ function Expenses({ data, refresh, loading }) {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
         try {
-          await fetch(`${API_URL}/api/expenses/${id}`, { method: 'DELETE' });
+          await fetch(`${API_URL}/expenses/${id}`, { method: 'DELETE' });
           refresh();
         } catch (err) {
           Alert.alert('Error', err.message);
@@ -775,7 +775,7 @@ function Bills({ data, refresh, loading }) {
     }
     setSubmitting(true);
     try {
-      const res = await fetch(`${API_URL}/api/bills`, {
+      const res = await fetch(`${API_URL}/bills`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, amount, dueDay, notifyEmail: email, notes })
@@ -800,7 +800,7 @@ function Bills({ data, refresh, loading }) {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
         try {
-          await fetch(`${API_URL}/api/bills/${id}`, { method: 'DELETE' });
+          await fetch(`${API_URL}/bills/${id}`, { method: 'DELETE' });
           refresh();
         } catch (err) {
           Alert.alert('Error', err.message);
@@ -811,7 +811,7 @@ function Bills({ data, refresh, loading }) {
 
   const runReminders = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/reminders/run`, { method: 'POST' });
+      const res = await fetch(`${API_URL}/reminders/run`, { method: 'POST' });
       const result = await res.json();
       Alert.alert('Reminders', result.sent?.length > 0 ? `Sent ${result.sent.length} reminders for today.` : 'No bills are due today.');
     } catch (err) {
