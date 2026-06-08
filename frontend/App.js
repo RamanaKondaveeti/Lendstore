@@ -166,7 +166,14 @@ function AuthScreen({ role, onBack }) {
         <Text style={styles.authTitle}>Sign in as {role === 'admin' ? 'Admin' : 'User'}</Text>
         <Text style={styles.authSubtitle}>Enter your email and password to access the dashboard.</Text>
         {role === 'admin' ? (
-          <Text style={styles.loginHint}>Seeded admin credentials: admin@hostel.local / Hostel@123</Text>
+          <View style={{ marginBottom: 16 }}>
+            <Text style={styles.loginHint}>Admin login details:</Text>
+            <Text style={styles.loginHintBold}>Email: newadmin@hostel.local</Text>
+            <Text style={styles.loginHintBold}>Password: NewAdmin@123</Text>
+            <TouchableOpacity style={[styles.smallAction, { marginTop: 10, alignSelf: 'center' }]} onPress={() => { setEmail('newadmin@hostel.local'); setPassword('NewAdmin@123'); }}>
+              <Text style={styles.smallActionText}>Fill admin credentials</Text>
+            </TouchableOpacity>
+          </View>
         ) : null}
 
         <LabeledInput label="Email" value={email} onChangeText={setEmail} placeholder="you@hostel.local" keyboardType="email-address" autoCapitalize="none" />
@@ -1160,6 +1167,7 @@ const styles = StyleSheet.create({
   authTitle: { fontSize: 30, fontWeight: '900', color: THEME.ink, textAlign: 'center', letterSpacing: 0 },
   authSubtitle: { fontSize: 14, lineHeight: 21, color: THEME.muted, textAlign: 'center', marginTop: 8, marginBottom: 20 },
   loginHint: { fontSize: 13, color: THEME.muted, textAlign: 'center', marginBottom: 16, lineHeight: 18 },
+  loginHintBold: { fontSize: 13, color: THEME.ink, textAlign: 'center', fontWeight: '700' },
   header: { minHeight: 76, paddingHorizontal: 18, paddingVertical: 12, backgroundColor: THEME.secondary, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   headerTitle: { fontSize: 22, fontWeight: '900', color: '#fff', letterSpacing: 0 },
   headerSub: { fontSize: 12, color: '#c9d7d2', marginTop: 2, fontWeight: '600' },
