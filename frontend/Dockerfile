@@ -2,7 +2,7 @@ FROM node:20-alpine AS build
 
 WORKDIR /app
 
-ARG EXPO_PUBLIC_API_URL=http://localhost:5000
+ARG EXPO_PUBLIC_API_URL=/api
 ENV EXPO_PUBLIC_API_URL=$EXPO_PUBLIC_API_URL
 
 COPY frontend/package*.json ./

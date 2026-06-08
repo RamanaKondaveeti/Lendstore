@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   TextInput,
   ScrollView,
+  RefreshControl,
   Alert,
   Modal,
   Dimensions,
@@ -19,7 +20,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://3.108.233.74:5000';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || '/api';
 
 const { width } = Dimensions.get('window');
 
@@ -436,7 +437,11 @@ function Dashboard({ data, refresh, loading, user, logout }) {
     .slice(0, 5);
 
   return (
-    <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      style={styles.scrollView}
+      showsVerticalScrollIndicator={false}
+      refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} />}
+    >
       <View style={styles.heroSection}>
         <View style={styles.rowBetween}>
           <View>
@@ -579,6 +584,8 @@ function Users({ data, refresh, loading }) {
         data={data.users || []}
         keyExtractor={(item) => item._id || Math.random().toString()}
         contentContainerStyle={{ padding: 16 }}
+        refreshing={loading}
+        onRefresh={refresh}
         renderItem={({ item }) => (
           <View style={styles.cardItem}>
             <View style={styles.avatar}>
@@ -726,6 +733,8 @@ function Expenses({ data, refresh, loading }) {
         data={data.expenses || []}
         keyExtractor={(item) => item._id || Math.random().toString()}
         contentContainerStyle={{ padding: 16 }}
+        refreshing={loading}
+        onRefresh={refresh}
         renderItem={({ item }) => (
           <View style={styles.cardItem}>
             <View style={[styles.iconCircle, { backgroundColor: THEME.primary + '10' }]}>
@@ -861,6 +870,8 @@ function Bills({ data, refresh, loading }) {
         data={data.bills || []}
         keyExtractor={(item) => item._id || Math.random().toString()}
         contentContainerStyle={{ padding: 16 }}
+        refreshing={loading}
+        onRefresh={refresh}
         renderItem={({ item }) => (
           <View style={styles.cardItem}>
             <View style={[styles.iconCircle, { backgroundColor: THEME.warning + '10' }]}>
@@ -891,7 +902,11 @@ function Balances({ data, refresh, loading }) {
   const settlements = data.summary?.settlements || [];
 
   return (
-    <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      style={styles.scrollView}
+      showsVerticalScrollIndicator={false}
+      refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} />}
+    >
       <View style={styles.summaryCard}>
         <Text style={styles.summaryLabel}>Total Settled Status</Text>
         <Text style={styles.summaryMain}>{settlements.length === 0 ? "All clear" : "Pending settlements"}</Text>
