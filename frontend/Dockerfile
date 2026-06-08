@@ -9,7 +9,7 @@ COPY frontend/package*.json ./
 RUN npm install
 
 COPY frontend .
-RUN npx expo export --platform web
+RUN npx expo export --platform web --output-dir dist
 
 FROM nginx:1.27-alpine
 

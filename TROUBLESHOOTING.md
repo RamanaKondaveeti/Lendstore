@@ -46,7 +46,7 @@ EXPO_PUBLIC_API_URL=http://3.108.233.74:5000
 
 ```bash
 # Navigate to project root
-cd c:\Users\user1\OneDrive\Desktop\Apps\LApp\mobile
+cd /home/ubuntu/Lendstore
 
 # Start all services
 docker-compose up --build
