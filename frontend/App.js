@@ -20,7 +20,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || '/api';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://3.108.233.74/api';
 
 const { width } = Dimensions.get('window');
 
@@ -100,16 +100,20 @@ export default function App() {
 
 // --- Auth Navigator ---
 function AuthNavigator() {
-  const [isLogin, setIsLogin] = useState(true);
-  return isLogin ? (
-    <LoginScreen onSwitch={() => setIsLogin(false)} />
+  const [view, setView] = useState('login');
+  return view === 'login' ? (
+    <LoginScreen onSwitch={() => setView('signup')} onForgot={() => setView('forgot')} />
+  ) : view === 'signup' ? (
+    <SignupScreen onSwitch={() => setView('login')} />
+  ) : view === 'forgot' ? (
+    <ForgotPasswordScreen onBack={() => setView('login')} onReset={() => setView('reset')} />
   ) : (
-    <SignupScreen onSwitch={() => setIsLogin(true)} />
+    <ResetPasswordScreen onBack={() => setView('forgot')} />
   );
 }
 
 // --- Login Screen ---
-function LoginScreen({ onSwitch }) {
+function LoginScreen({ onSwitch, onForgot }) {
   const { login } = useContext(AuthContext);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -212,12 +216,161 @@ function LoginScreen({ onSwitch }) {
           <Text style={styles.rememberMeText}>Remember Me</Text>
         </TouchableOpacity>
 
+        <TouchableOpacity onPress={onForgot} style={styles.linkButton}>
+          <Text style={styles.linkText}>Forgot password?</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity style={styles.primaryButtonLarge} onPress={handleLogin} disabled={loading}>
           {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonTextLarge}>Sign In</Text>}
         </TouchableOpacity>
 
         <TouchableOpacity onPress={onSwitch} style={styles.switchButton}>
-          <Text style={styles.switchText}>Don't have an account? <Text style={styles.switchHighlight}>Sign Up</Text></Text>
+          <Text style={styles.switchText}>Don't have an account? <Text style={styles.switchHighlight}>Create Account</Text></Text>
+        </TouchableOpacity>
+      </View>
+    </KeyboardAvoidingView>
+  );
+}
+
+// --- Forgot Password Screen ---
+function ForgotPasswordScreen({ onBack, onReset }) {
+  const [email, setEmail] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState('');
+
+  const handleSendReset = async () => {
+    if (!email) return Alert.alert('Error', 'Please enter your email');
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/auth/forgot-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Unable to send reset email');
+      setMessage('If the email exists, reset instructions have been sent. Check your inbox.');
+    } catch (err) {
+      Alert.alert('Request Failed', err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.authContainer}>
+      <View style={styles.authCard}>
+        <View style={styles.logoCircle}>
+          <MaterialCommunityIcons name="email" size={40} color={THEME.primary} />
+        </View>
+        <Text style={styles.authTitle}>Forgot Password</Text>
+        <Text style={styles.authSubtitle}>Enter your email to receive reset instructions.</Text>
+
+        {message ? <Text style={styles.successMessage}>{message}</Text> : null}
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Email Address</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="example@mail.com"
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
+          />
+        </View>
+
+        <TouchableOpacity style={styles.primaryButtonLarge} onPress={handleSendReset} disabled={loading}>
+          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonTextLarge}>Send Reset Email</Text>}
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={onReset} style={styles.switchButton}>
+          <Text style={styles.switchText}>Have a reset token? <Text style={styles.switchHighlight}>Reset Password</Text></Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={onBack} style={styles.linkButton}>
+          <Text style={styles.linkText}>Back to login</Text>
+        </TouchableOpacity>
+      </View>
+    </KeyboardAvoidingView>
+  );
+}
+
+function ResetPasswordScreen({ onBack }) {
+  const [token, setToken] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleReset = async () => {
+    if (!token || !password || !confirmPassword) return Alert.alert('Error', 'Please fill all fields');
+    if (password !== confirmPassword) return Alert.alert('Error', 'Passwords do not match');
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/auth/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, password })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Reset failed');
+      Alert.alert('Success', 'Password updated successfully. Please log in with your new password.');
+      onBack();
+    } catch (err) {
+      Alert.alert('Reset Failed', err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.authContainer}>
+      <View style={styles.authCard}>
+        <View style={styles.logoCircle}>
+          <Ionicons name="lock-closed" size={40} color={THEME.primary} />
+        </View>
+        <Text style={styles.authTitle}>Reset Password</Text>
+        <Text style={styles.authSubtitle}>Enter the token from your email and set a new password.</Text>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Reset Token</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Paste your reset token"
+            value={token}
+            onChangeText={setToken}
+            autoCapitalize="none"
+          />
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>New Password</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="New password"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+          />
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Confirm Password</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Confirm password"
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+            secureTextEntry
+          />
+        </View>
+
+        <TouchableOpacity style={styles.primaryButtonLarge} onPress={handleReset} disabled={loading}>
+          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonTextLarge}>Reset Password</Text>}
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={onBack} style={styles.linkButton}>
+          <Text style={styles.linkText}>Back to forgot password</Text>
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
@@ -393,13 +546,12 @@ function MainScreen() {
       <StatusBar barStyle="dark-content" backgroundColor={THEME.surface} />
       <View style={styles.header}>
         <Text style={styles.headerTitle}>LendStore</Text>
-        <TouchableOpacity onPress={fetchData} disabled={loading}>
-          {loading ? (
-            <ActivityIndicator size="small" color={THEME.primary} />
-          ) : (
-            <Ionicons name="refresh-outline" size={24} color={THEME.primary} />
-          )}
-        </TouchableOpacity>
+        <View style={styles.headerRight}>
+          <Text style={styles.headerUser}>{user?.name || 'User'}</Text>
+          <TouchableOpacity onPress={logout} style={styles.logoutIcon}>
+            <Ionicons name="log-out-outline" size={24} color={THEME.error} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.content}>
@@ -443,14 +595,9 @@ function Dashboard({ data, refresh, loading, user, logout }) {
       refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} />}
     >
       <View style={styles.heroSection}>
-        <View style={styles.rowBetween}>
-          <View>
-            <Text style={styles.greeting}>Hello, {user?.name?.split(' ')[0] || 'User'}</Text>
-            <Text style={styles.subGreeting}>Track shared spending, bills, and balances</Text>
-          </View>
-          <TouchableOpacity onPress={logout} style={styles.logoutBtn}>
-            <Ionicons name="log-out-outline" size={22} color={THEME.error} />
-          </TouchableOpacity>
+        <View>
+          <Text style={styles.greeting}>Hello, {user?.name?.split(' ')[0] || 'User'}</Text>
+          <Text style={styles.subGreeting}>Track shared spending, bills, and balances</Text>
         </View>
       </View>
 
@@ -972,6 +1119,9 @@ const styles = StyleSheet.create({
     borderBottomColor: THEME.border
   },
   headerTitle: { fontSize: 22, fontWeight: '800', color: THEME.primary, letterSpacing: 0 },
+  headerRight: { flexDirection: 'row', alignItems: 'center' },
+  headerUser: { fontSize: 14, color: THEME.textSecondary, fontWeight: '700', marginRight: 12 },
+  logoutIcon: { padding: 8, borderRadius: 8, backgroundColor: THEME.error + '10' },
   content: { flex: 1 },
   scrollView: { flex: 1, padding: 20 },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -1102,6 +1252,9 @@ const styles = StyleSheet.create({
   emptyText: { color: THEME.textSecondary, marginTop: 12, fontSize: 14, fontWeight: '500' },
   rememberMeContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 20, marginLeft: 4 },
   rememberMeText: { fontSize: 14, color: THEME.text, marginLeft: 8, fontWeight: '500' },
+  linkButton: { alignSelf: 'flex-start', marginTop: 14 },
+  linkText: { color: THEME.primary, fontWeight: '700' },
+  successMessage: { color: THEME.success, fontSize: 14, marginBottom: 12, textAlign: 'center' },
   passwordContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: THEME.surface, borderRadius: 8, borderWidth: 1, borderColor: THEME.border },
   passwordInput: { flex: 1, padding: 14, fontSize: 15, color: THEME.text },
   eyeIcon: { paddingHorizontal: 12 }

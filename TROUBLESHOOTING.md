@@ -155,7 +155,7 @@ curl -i -X OPTIONS http://3.108.233.74:5000/api/auth/login \
 **Fix:** Update `.env` if needed and restart services:
 ```bash
 ssh your-ec2-instance
-cd /path/to/lendstore
+cd /home/ubuntu/Lendstore
 docker-compose down
 docker-compose up --build
 ```

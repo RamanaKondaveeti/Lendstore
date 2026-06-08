@@ -3,6 +3,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const jwt = require('jsonwebtoken');
+const nodemailer = require('nodemailer');
 const bcrypt = require('bcryptjs');
 require('dotenv').config();
 
@@ -11,6 +12,40 @@ const { pool, query } = require('./db');
 const app = express();
 const port = Number(process.env.PORT || 5000);
 const jwtSecret = process.env.JWT_SECRET || 'dev-secret';
+const appBaseUrl = process.env.APP_BASE_URL || null;
+
+const hasMailConfig = process.env.MAIL_HOST && process.env.MAIL_USER && process.env.MAIL_PASS;
+const mailTransport = hasMailConfig
+  ? nodemailer.createTransport({
+      host: process.env.MAIL_HOST,
+      port: Number(process.env.MAIL_PORT || 587),
+      secure: process.env.MAIL_SECURE === 'true',
+      auth: {
+        user: process.env.MAIL_USER,
+        pass: process.env.MAIL_PASS
+      }
+    })
+  : null;
+
+async function sendMail({ to, subject, text, html }) {
+  if (!mailTransport) {
+    console.warn('Mail transport is not configured; skipping email send to', to);
+    console.log({ to, subject, text, html });
+    return;
+  }
+
+  try {
+    await mailTransport.sendMail({
+      from: process.env.MAIL_FROM || 'no-reply@lendstore.local',
+      to,
+      subject,
+      text,
+      html
+    });
+  } catch (error) {
+    console.error('Failed to send email', error);
+  }
+}
 
 // Parse CORS origins
 const corsOrigins = process.env.CORS_ORIGIN?.split(',').map(o => o.trim()) || ['*'];
@@ -123,6 +158,52 @@ app.post('/api/auth/login', async (req, res) => {
   if (!valid) return res.status(401).json({ message: 'Invalid email or password' });
 
   res.json({ token: signToken(user), user: mapAuthUser(user) });
+});
+
+app.post('/api/auth/forgot-password', async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ message: 'Email is required' });
+
+  const rows = await query('SELECT * FROM auth_users WHERE email = :email', { email });
+  const user = rows[0];
+
+  if (user) {
+    const token = jwt.sign({ id: user.id, email: user.email }, jwtSecret, { expiresIn: '1h' });
+    const baseUrl = appBaseUrl || `${req.protocol}://${req.get('host')}`;
+    const resetUrl = `${baseUrl}/reset-password?token=${token}`;
+    const text = `Hello ${user.name},\n\nA password reset request was received for your LendStore account. Use the link below to reset your password. This link expires in 1 hour.\n\n${resetUrl}\n\nIf you did not request this, ignore this email.`;
+    const html = `<p>Hello ${user.name},</p><p>A password reset request was received for your LendStore account. Use the link below to reset your password. This link expires in 1 hour.</p><p><a href="${resetUrl}">Reset password</a></p><p>If you did not request this, ignore this email.</p>`;
+    await sendMail({ to: user.email, subject: 'LendStore Password Reset', text, html });
+  }
+
+  res.json({ message: 'If an account exists for that email, password reset instructions have been sent.' });
+});
+
+app.post('/api/auth/reset-password', async (req, res) => {
+  const { token, password } = req.body;
+  if (!token || !password) return res.status(400).json({ message: 'Token and password are required' });
+
+  let payload;
+  try {
+    payload = jwt.verify(token, jwtSecret);
+  } catch (error) {
+    return res.status(400).json({ message: 'Invalid or expired reset token' });
+  }
+
+  const rows = await query('SELECT * FROM auth_users WHERE id = :id AND email = :email', {
+    id: payload.id,
+    email: payload.email
+  });
+  const user = rows[0];
+  if (!user) return res.status(400).json({ message: 'Invalid reset token' });
+
+  const passwordHash = await bcrypt.hash(password, 12);
+  await query('UPDATE auth_users SET password_hash = :passwordHash WHERE id = :id', {
+    passwordHash,
+    id: user.id
+  });
+
+  res.json({ message: 'Password reset successfully' });
 });
 
 app.get('/api/users', async (_req, res) => {
