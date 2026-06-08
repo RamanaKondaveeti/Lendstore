@@ -12,8 +12,15 @@ const app = express();
 const port = Number(process.env.PORT || 5000);
 const jwtSecret = process.env.JWT_SECRET || 'dev-secret';
 
+// Parse CORS origins
+const corsOrigins = process.env.CORS_ORIGIN?.split(',').map(o => o.trim()) || ['*'];
+
 app.use(helmet());
-app.use(cors({ origin: process.env.CORS_ORIGIN?.split(',') || true, credentials: true }));
+app.use(cors({ 
+  origin: corsOrigins.includes('*') ? true : corsOrigins, 
+  credentials: true,
+  optionsSuccessStatus: 200
+}));
 app.use(express.json());
 app.use(morgan('combined'));
 
