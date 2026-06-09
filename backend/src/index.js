@@ -16,6 +16,7 @@ const defaultAdminPassword = process.env.ADMIN_PASSWORD || 'Admin@123';
 
 const corsOrigins = process.env.CORS_ORIGIN?.split(',').map((origin) => origin.trim()) || ['*'];
 
+
 app.use(helmet({
   crossOriginResourcePolicy: false,
 }));
