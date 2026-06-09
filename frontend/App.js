@@ -174,7 +174,16 @@ function AuthScreen({ role, onBack }) {
               <Text style={styles.smallActionText}>Fill admin credentials</Text>
             </TouchableOpacity>
           </View>
-        ) : null}
+        ) : (
+          <View style={{ marginBottom: 16 }}>
+            <Text style={styles.loginHint}>User login details:</Text>
+            <Text style={styles.loginHintBold}>Email: ramana@hostel.local</Text>
+            <Text style={styles.loginHintBold}>Password: ramana@123</Text>
+            <TouchableOpacity style={[styles.smallAction, { marginTop: 10, alignSelf: 'center' }]} onPress={() => { setEmail('ramana@hostel.local'); setPassword('ramana@123'); }}>
+              <Text style={styles.smallActionText}>Fill user credentials</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         <LabeledInput label="Email" value={email} onChangeText={setEmail} placeholder="you@hostel.local" keyboardType="email-address" autoCapitalize="none" />
         <LabeledInput label="Password" value={password} onChangeText={setPassword} placeholder="Password" secureTextEntry />

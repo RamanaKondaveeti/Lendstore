@@ -200,23 +200,30 @@ async function ensureSchema() {
 
 async function seedDemoData() {
   const users = await query('SELECT COUNT(*) AS count FROM auth_users');
-  if (Number(users[0].count) > 0) return;
+  console.log('Checking demo users...');
 
-  console.log('Seeding demo data...');
   const passwordHash = await bcrypt.hash('Hostel@123', 12);
+  const ramanaHash = await bcrypt.hash('ramana@123', 12);
+
   const seededUsers = [
     ['Nivaas Admin', 'admin@hostel.local', passwordHash, 'admin', 'Office', 'hostel@upi', 'management'],
     ['Rahul Sharma', 'rahul@hostel.local', passwordHash, 'user', 'B-204', 'rahul@upi', 'standard'],
     ['Ananya Mehta', 'ananya@hostel.local', passwordHash, 'user', 'B-204', 'ananya@upi', 'standard'],
-    ['Kabir Khan', 'kabir@hostel.local', passwordHash, 'user', 'B-205', 'kabir@upi', 'protein']
+    ['Kabir Khan', 'kabir@hostel.local', passwordHash, 'user', 'B-205', 'kabir@upi', 'protein'],
+    ['Ramana', 'ramana@hostel.local', ramanaHash, 'user', 'C-101', 'ramana@upi', 'standard']
   ];
 
   for (const row of seededUsers) {
-    const res = await query(
-      'INSERT INTO auth_users (name, email, password_hash, role, room_no, upi_id, mess_plan) VALUES (:name, :email, :hash, :role, :room, :upi, :plan)',
-      { name: row[0], email: row[1], hash: row[2], role: row[3], room: row[4], upi: row[5], plan: row[6] }
-    );
-    await query('INSERT IGNORE INTO expense_users (id, name, email) VALUES (:id, :name, :email)', { id: res.insertId, name: row[0], email: row[1] });
+    const existing = await query('SELECT id FROM auth_users WHERE email = :email', { email: row[1] });
+    if (existing.length === 0) {
+      const res = await query(
+        'INSERT INTO auth_users (name, email, password_hash, role, room_no, upi_id, mess_plan) VALUES (:name, :email, :hash, :role, :room, :upi, :plan)',
+        { name: row[0], email: row[1], hash: row[2], role: row[3], room: row[4], upi: row[5], plan: row[6] }
+      );
+      await query('INSERT IGNORE INTO expense_users (id, name, email) VALUES (:id, :name, :email)', { id: res.insertId, name: row[0], email: row[1] });
+    } else if (row[1] === 'ramana@hostel.local') {
+      await query('UPDATE auth_users SET password_hash = :hash WHERE email = :email', { email: row[1], hash: ramanaHash });
+    }
   }
 }
 
