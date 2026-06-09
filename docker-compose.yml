@@ -14,7 +14,7 @@ services:
       - mysql_data:/var/lib/mysql
       - ./backend/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "mysql", "-pBhargavaram@143"]
+      test: ["CMD", "mysqladmin", "ping", "-u", "root", "-pBhargavaram@143"]
       interval: 10s
       timeout: 5s
       retries: 10
